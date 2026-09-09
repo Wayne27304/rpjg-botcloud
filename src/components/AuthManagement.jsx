@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Crown,
   UserPlus,
@@ -14,13 +14,27 @@ import {
   Unlock,
   AlertTriangle,
   Calendar,
-  Sparkles
+  Sparkles,
+  Database,
+  Download,
+  Upload,
+  Server,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
+  CheckCircle,
+  ExternalLink
 } from 'lucide-react';
 
 export default function AuthManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
+  const [copiedBackup, setCopiedBackup] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+  const [storageStatus, setStorageStatus] = useState(null);
+
+  const fileInputRef = useRef(null);
 
   // 表單資料
   const [email, setEmail] = useState('');
@@ -50,8 +64,24 @@ export default function AuthManagement({ currentUser }) {
     }
   };
 
+  const fetchStorageStatus = async () => {
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch('/api/auth/storage-status', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStorageStatus(data);
+      }
+    } catch (e) {
+      console.error('讀取存儲狀態失敗:', e);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
+    fetchStorageStatus();
   }, []);
 
   const handleGeneratePassword = () => {
@@ -89,6 +119,7 @@ export default function AuthManagement({ currentUser }) {
         setPassword('');
         setNote('');
         fetchUsers();
+        fetchStorageStatus();
         setTimeout(() => setFormStatus(null), 6000);
       } else {
         setFormStatus({ type: 'error', message: data.message });
@@ -112,6 +143,7 @@ export default function AuthManagement({ currentUser }) {
       const data = await res.json();
       if (data.success) {
         fetchUsers();
+        fetchStorageStatus();
       }
     } catch (e) {
       console.error(e);
@@ -128,6 +160,7 @@ export default function AuthManagement({ currentUser }) {
       const data = await res.json();
       if (data.success) {
         fetchUsers();
+        fetchStorageStatus();
       }
     } catch (e) {
       console.error(e);
@@ -145,10 +178,81 @@ export default function AuthManagement({ currentUser }) {
       const data = await res.json();
       if (data.success) {
         fetchUsers();
+        fetchStorageStatus();
       }
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // 匯出備份 JSON 檔案
+  const handleExportBackup = async () => {
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch('/api/auth/export', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rpjg_users_backup_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('匯出備份失敗: ' + err.message);
+    }
+  };
+
+  // 匯入備份 JSON 檔案
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const json = JSON.parse(event.target.result);
+        const usersList = json.users || (Array.isArray(json) ? json : null);
+        if (!usersList || !Array.isArray(usersList)) {
+          alert('匯入格式不正確，需為含有 users 陣列的 JSON 備份檔');
+          return;
+        }
+
+        const token = localStorage.getItem('rpjg_auth_token');
+        const res = await fetch('/api/auth/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ users: usersList })
+        });
+        const result = await res.json();
+        if (result.success) {
+          alert(`🎉 成功匯入還原 ${result.importedCount} 位使用者帳號！目前名冊共 ${result.totalUsers} 位。`);
+          fetchUsers();
+          fetchStorageStatus();
+        } else {
+          alert('匯入失敗: ' + result.message);
+        }
+      } catch (err) {
+        alert('解析檔案失敗: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // 複製 Render 環境變數備份代碼
+  const handleCopyBackupSnippet = () => {
+    if (!storageStatus?.backupSnippet) return;
+    navigator.clipboard.writeText(storageStatus.backupSnippet);
+    setCopiedBackup(true);
+    setTimeout(() => setCopiedBackup(false), 3000);
   };
 
   const copyToClipboard = (text, idx) => {
@@ -159,6 +263,7 @@ export default function AuthManagement({ currentUser }) {
 
   const activeCount = users.filter(u => u.status === 'ACTIVE' && !u.isExpired).length;
   const expiredCount = users.filter(u => u.isExpired).length;
+  const isCloud = storageStatus?.isCloudActive;
 
   return (
     <div className="space-y-6">
@@ -196,6 +301,118 @@ export default function AuthManagement({ currentUser }) {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* 雲端永久保存與備份管理中心 (解決更新帳號遺失的核心模組) */}
+      <div className={`p-5 rounded-2xl border transition-all ${
+        isCloud
+          ? 'bg-gradient-to-br from-emerald-950/30 via-[#1e1f22] to-[#1e1f22] border-emerald-500/30'
+          : 'bg-gradient-to-br from-amber-950/30 via-[#1e1f22] to-[#1e1f22] border-amber-500/30'
+      }`}>
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start space-x-3">
+            <div className={`p-2.5 rounded-xl shrink-0 ${
+              isCloud ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+            }`}>
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                  isCloud ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
+                }`}>
+                  {isCloud ? '🟢 Supabase 雲端資料庫已連線 (永久保存)' : '🟡 本機檔案模式 (更新將重置)'}
+                </span>
+                {storageStatus?.hasBackupEnv && (
+                  <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
+                    📦 Render 環境變數快照已啟用
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-gray-300 mt-1.5 leading-relaxed max-w-2xl">
+                {isCloud
+                  ? '所有買家授權與到期資料已自動雙向同步至 Supabase PostgreSQL 雲端資料庫。即使 Render 每次推送更新、手動重新部署或容器重啟，買家帳號 100% 永久保留，絕不遺失！'
+                  : 'Render 免費主機在每次 Git 更新推送時會清除本機容器檔案。強烈建議在 Render 後台加入 Supabase 環境變數，或點擊右側「複製 Render 備份字串 / 匯出備份」，即可零遺失！'}
+              </p>
+            </div>
+          </div>
+
+          {/* 動作工具列 */}
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImportFile}
+              accept=".json"
+              className="hidden"
+            />
+
+            <button
+              onClick={handleExportBackup}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-[#2b2d31] hover:bg-[#35373c] text-white text-xs font-semibold border border-gray-700 transition shadow-sm"
+              title="下載所有授權買家的 JSON 備份檔案"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-400" />
+              <span>匯出備份 (JSON)</span>
+            </button>
+
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-[#2b2d31] hover:bg-[#35373c] text-white text-xs font-semibold border border-gray-700 transition shadow-sm"
+              title="上傳備份檔案立即全數還原買家帳號"
+            >
+              <Upload className="w-3.5 h-3.5 text-emerald-400" />
+              <span>匯入還原 (JSON)</span>
+            </button>
+
+            <button
+              onClick={handleCopyBackupSnippet}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-semibold shadow-md shadow-discord-blurple/20 transition"
+              title="複製 Base64 代碼，貼到 Render -> Environment Variables -> RPJG_USERS_BACKUP 即可自動永久保存"
+            >
+              {copiedBackup ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedBackup ? '已複製 Render 變數！' : '複製 Render 備份字串'}</span>
+            </button>
+
+            <button
+              onClick={() => setShowGuide(!showGuide)}
+              className="flex items-center space-x-1 px-2.5 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-xs transition"
+              title="如何設定 Supabase 永久雲端資料庫"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+              <span>設定教學</span>
+              {showGuide ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        {/* 展開之教學面板 */}
+        {showGuide && (
+          <div className="mt-4 pt-4 border-t border-gray-800 text-xs text-gray-300 space-y-3 bg-[#141517] p-4 rounded-xl">
+            <h4 className="font-bold text-white flex items-center space-x-2">
+              <Database className="w-4 h-4 text-emerald-400" />
+              <span>如何設定 Supabase 實現更新完全不遺失帳號 (只需 3 步驟)：</span>
+            </h4>
+            <ol className="list-decimal list-inside space-y-2 text-gray-300 leading-relaxed pl-1">
+              <li>
+                <strong>前往 Supabase</strong>：在 <a href="https://supabase.com" target="_blank" rel="noreferrer" className="text-discord-blurple underline inline-flex items-center space-x-0.5"><span>Supabase 官網</span><ExternalLink className="w-3 h-3 ml-0.5" /></a> 建立一個免費資料庫專案。
+              </li>
+              <li>
+                <strong>建立資料表</strong>：進入左側選單的 <code>SQL Editor</code>，點擊 <code>New Query</code>，將專案中的 <code>supabase_bot_schema.sql</code> 內容貼上並點擊 <code>Run</code> 執行。
+              </li>
+              <li>
+                <strong>設定 Render 環境變數</strong>：進入 <a href="https://dashboard.render.com" target="_blank" rel="noreferrer" className="text-discord-blurple underline inline-flex items-center space-x-0.5"><span>Render 後台</span><ExternalLink className="w-3 h-3 ml-0.5" /></a> 您的專案 <code>Environment</code> 標籤頁，新增以下兩組變數：
+                <div className="mt-2 bg-[#1e1f22] p-2.5 rounded-lg font-mono text-[11px] text-gray-200 border border-gray-700 space-y-1">
+                  <div><strong className="text-emerald-400">SUPABASE_URL</strong> = 您的 Supabase 專案網址 (例: https://xyz.supabase.co)</div>
+                  <div><strong className="text-emerald-400">SUPABASE_KEY</strong> = 您的 Supabase anon 或 service_role 金鑰</div>
+                </div>
+              </li>
+            </ol>
+            <div className="p-2.5 rounded-lg bg-indigo-950/40 border border-indigo-800/60 text-indigo-300 text-[11px]">
+              💡 <strong>小撇步</strong>：若您目前尚未建立 Supabase，也可直接點擊上方「<strong>複製 Render 備份字串</strong>」，到 Render 後台新增變數 <code>RPJG_USERS_BACKUP</code> 並貼上，系統每次重啟就會自動還原所有買家！
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 授權新增表單 */}
@@ -368,7 +585,7 @@ export default function AuthManagement({ currentUser }) {
             <h3 className="text-sm font-bold text-white">已授權使用者名冊</h3>
           </div>
           <button
-            onClick={fetchUsers}
+            onClick={() => { fetchUsers(); fetchStorageStatus(); }}
             title="重新整理"
             className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition"
           >

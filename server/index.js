@@ -184,6 +184,33 @@ app.delete('/api/auth/users/:email', requireAuth, requireSuperAdmin, (req, res) 
   res.json(result);
 });
 
+// 管理員：取得持久化存儲狀態 (Supabase / Render Env / Local)
+app.get('/api/auth/storage-status', requireAuth, requireSuperAdmin, (req, res) => {
+  res.json({ success: true, ...authManager.getStorageStatus() });
+});
+
+// 管理員：匯出所有授權備份 (JSON)
+app.get('/api/auth/export', requireAuth, requireSuperAdmin, (req, res) => {
+  const backup = authManager.exportUsers();
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', 'attachment; filename="rpjg_users_backup.json"');
+  res.json(backup);
+});
+
+// 管理員：匯入還原授權備份 (JSON)
+app.post('/api/auth/import', requireAuth, requireSuperAdmin, (req, res) => {
+  try {
+    const rawList = req.body.users || (Array.isArray(req.body) ? req.body : null);
+    if (!rawList) {
+      return res.status(400).json({ success: false, message: '匯入格式不正確，需包含 users 陣列' });
+    }
+    const result = authManager.importUsers(rawList);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+});
+
 /* ================================================================
    系統資訊 API
    ================================================================ */
@@ -364,12 +391,22 @@ app.get('*', (req, res) => {
   }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n=============================================================`);
-  console.log(`  🚀 RPJG BotCloud - Discord Bot 線上雲端託管平台已啟動 (v3.0)`);
-  console.log(`  🏢 作者：R.P.J.G 開發部門`);
-  console.log(`  👑 最高管理員: ${SUPER_ADMIN_EMAIL}`);
-  console.log(`  🌐 伺服器位址: http://0.0.0.0:${PORT}`);
-  console.log(`  📡 WebSocket 連線: ws://0.0.0.0:${PORT}/ws`);
-  console.log(`=============================================================\n`);
-});
+async function startServer() {
+  try {
+    await authManager.initCloud();
+  } catch (err) {
+    console.error('雲端資料庫初始化例外:', err.message);
+  }
+
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n=============================================================`);
+    console.log(`  🚀 RPJG BotCloud - Discord Bot 線上雲端託管平台已啟動 (v3.0)`);
+    console.log(`  🏢 作者：R.P.J.G 開發部門`);
+    console.log(`  👑 最高管理員: ${SUPER_ADMIN_EMAIL}`);
+    console.log(`  🌐 伺服器位址: http://0.0.0.0:${PORT}`);
+    console.log(`  📡 WebSocket 連線: ws://0.0.0.0:${PORT}/ws`);
+    console.log(`=============================================================\n`);
+  });
+}
+
+startServer();

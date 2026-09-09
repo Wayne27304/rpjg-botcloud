@@ -12,6 +12,7 @@
     "start": "node server/index.js"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.116.0",
     "@vitejs/plugin-react": "^4.3.4",
     "adm-zip": "^0.6.0",
     "autoprefixer": "^10.4.20",
