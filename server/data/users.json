@@ -11,5 +11,18 @@
     "maxBots": 50,
     "createdAt": "2026-09-09T13:00:49.149Z",
     "note": "系統最高管理者 (R.P.J.G 總管)"
+  },
+  {
+    "id": "usr-dino1010804",
+    "email": "dino1010804@gmail.com",
+    "passwordHash": "4e3d7b687905f7b269170068289f6796951fcfd92886e61775c0dcb67eed9624",
+    "plainPasswordHint": "rpjg_s08n8t",
+    "role": "USER",
+    "displayName": "sh",
+    "status": "ACTIVE",
+    "expiresAt": null,
+    "maxBots": 5,
+    "createdAt": "2026-09-09T14:10:00.000Z",
+    "note": "買家客戶 (永久授權)"
   }
 ]
