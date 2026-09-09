@@ -1,0 +1,17 @@
+{
+  "id": "bot-mtu4oy82-1nv5",
+  "name": "Discord 智能客服機器人 (Dino)",
+  "type": "python",
+  "description": "由 Dino 託管的專屬 Discord Bot",
+  "mainFile": "bot.py",
+  "ownerEmail": "dino1010804@gmail.com",
+  "status": "ONLINE",
+  "author": "R.P.J.G 開發部門",
+  "createdAt": "2026-09-09T13:22:45.699Z",
+  "nodeLocation": "RPJG-TW-Node-01 (台灣彰化機房)",
+  "autoRestart": true,
+  "maxMemory": 512,
+  "cpu": 0,
+  "memory": 0,
+  "uptime": 0
+}

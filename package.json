@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "render-build": "npm install --include=dev && vite build && (pip3 install discord.py python-dotenv requests aiohttp || pip install discord.py python-dotenv requests aiohttp || python3 -m pip install discord.py python-dotenv requests aiohttp || true)",
+    "sync-cloud": "node scripts/sync-cloud.js",
     "start": "node server/index.js"
   },
   "dependencies": {

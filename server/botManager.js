@@ -10,11 +10,13 @@ import fs from 'fs';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import { fileURLToPath } from 'url';
-import { SUPER_ADMIN_EMAIL } from './authManager.js';
+import { authManager, SUPER_ADMIN_EMAIL } from './authManager.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const BOTS_DIR = path.join(__dirname, 'bots');
+const DATA_DIR = path.join(__dirname, 'data');
+const BOTS_BACKUP_FILE = path.join(DATA_DIR, 'bots_backup.json');
 
 class BotManager {
   constructor() {
@@ -28,7 +30,230 @@ class BotManager {
       fs.mkdirSync(BOTS_DIR, { recursive: true });
     }
 
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+
+    this.initBots();
     this.startResourceMonitor();
+  }
+
+  // 初始化並還原機器人（三重永續機制：環境變數 RPJG_BOTS_BACKUP + 本地 data/bots_backup.json + Supabase 雲端資料庫）
+  async initBots() {
+    let cloudBots = [];
+
+    // 1. 優先從 Render 環境變數 RPJG_BOTS_BACKUP 讀取
+    const envBackup = process.env.RPJG_BOTS_BACKUP;
+    if (envBackup && envBackup.trim()) {
+      try {
+        let decoded = null;
+        try {
+          decoded = Buffer.from(envBackup.trim(), 'base64').toString('utf8');
+        } catch (_) {
+          decoded = envBackup.trim();
+        }
+        const parsed = JSON.parse(decoded);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log(`[RPJG-ENV-RESTORE] 📦 從 RPJG_BOTS_BACKUP 還原了 ${parsed.length} 個機器人！`);
+          cloudBots = parsed;
+        }
+      } catch (err) {
+        console.error('[RPJG-ENV-RESTORE] 解析 RPJG_BOTS_BACKUP 失敗:', err.message);
+      }
+    }
+
+    // 2. 從 Git 追蹤保存的 server/data/bots_backup.json 還原
+    if (fs.existsSync(BOTS_BACKUP_FILE)) {
+      try {
+        const fileContent = fs.readFileSync(BOTS_BACKUP_FILE, 'utf8');
+        const parsed = JSON.parse(fileContent);
+        if (Array.isArray(parsed)) {
+          console.log(`[RPJG-FILE-RESTORE] 📦 從 bots_backup.json 讀取到 ${parsed.length} 個機器人備份！`);
+          for (const bot of parsed) {
+            if (!cloudBots.some(b => b.id === bot.id)) {
+              cloudBots.push(bot);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[RPJG-FILE-RESTORE] 讀取 bots_backup.json 失敗:', err.message);
+      }
+    }
+
+    // 3. 還原專案目錄與所有檔案
+    for (const bot of cloudBots) {
+      if (!bot || !bot.id) continue;
+      const botDir = path.join(BOTS_DIR, bot.id);
+      if (!fs.existsSync(botDir)) {
+        fs.mkdirSync(botDir, { recursive: true });
+      }
+
+      // 還原 metadata.json
+      const metaPath = path.join(botDir, 'metadata.json');
+      if (!fs.existsSync(metaPath) && bot.metadata) {
+        fs.writeFileSync(metaPath, JSON.stringify(bot.metadata, null, 2), 'utf8');
+      }
+
+      // 還原程式碼與環境變數檔案 (bot.files)
+      if (bot.files && typeof bot.files === 'object') {
+        for (const [relPath, content] of Object.entries(bot.files)) {
+          const targetPath = path.join(botDir, relPath);
+          if (!fs.existsSync(targetPath)) {
+            fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+            if (typeof content === 'string' && content.startsWith('base64:')) {
+              fs.writeFileSync(targetPath, Buffer.from(content.replace('base64:', ''), 'base64'));
+            } else {
+              fs.writeFileSync(targetPath, content, 'utf8');
+            }
+          }
+        }
+      }
+    }
+
+    // 4. 同步至最新備份庫
+    this.syncToBackup();
+  }
+
+  // 自動將當前磁碟所有機器人檔案深度序列化並備份 (寫入 bots_backup.json 並推送 Supabase)
+  syncToBackup() {
+    try {
+      if (!fs.existsSync(BOTS_DIR)) return;
+      if (!fs.existsSync(DATA_DIR)) {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      }
+
+      const entries = fs.readdirSync(BOTS_DIR, { withFileTypes: true });
+      const backupList = [];
+
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const botId = entry.name;
+        const botDir = path.join(BOTS_DIR, botId);
+        const metaPath = path.join(botDir, 'metadata.json');
+        if (!fs.existsSync(metaPath)) continue;
+
+        let metadata = {};
+        try {
+          metadata = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+        } catch (_) {}
+
+        const files = {};
+        const scanFiles = (dir, relPrefix = '') => {
+          const dirEntries = fs.readdirSync(dir, { withFileTypes: true });
+          for (const item of dirEntries) {
+            if (item.name === 'node_modules' || item.name === '.git' || item.name === '__pycache__' || item.name === '.DS_Store' || item.name === 'metadata.json') continue;
+            const fullItemPath = path.join(dir, item.name);
+            const relItemPath = relPrefix ? `${relPrefix}/${item.name}` : item.name;
+
+            if (item.isDirectory()) {
+              scanFiles(fullItemPath, relItemPath);
+            } else {
+              try {
+                const stat = fs.statSync(fullItemPath);
+                if (stat.size < 5 * 1024 * 1024) {
+                  const buf = fs.readFileSync(fullItemPath);
+                  files[relItemPath] = 'base64:' + buf.toString('base64');
+                }
+              } catch (_) {}
+            }
+          }
+        };
+
+        scanFiles(botDir);
+
+        backupList.push({
+          id: botId,
+          metadata,
+          files,
+          syncedAt: new Date().toISOString()
+        });
+      }
+
+      fs.writeFileSync(BOTS_BACKUP_FILE, JSON.stringify(backupList, null, 2), 'utf8');
+      console.log(`[RPJG 永續守護] 機器人備份已自動同步至 server/data/bots_backup.json (共 ${backupList.length} 個機器人)`);
+
+      // 嘗試異步同步至 Supabase (若配置了雲端資料庫)
+      this.syncToSupabase(backupList).catch(() => {});
+    } catch (err) {
+      console.error('[RPJG 永續守護] 備份同步失敗:', err.message);
+    }
+  }
+
+  async syncToSupabase(backupList) {
+    if (!authManager || !authManager.supabase || !authManager.isCloudActive) return;
+    try {
+      for (const item of backupList) {
+        await authManager.supabase.from('rpjg_bots').upsert({
+          id: item.id,
+          name: item.metadata?.name || item.id,
+          owner_email: item.metadata?.ownerEmail || SUPER_ADMIN_EMAIL,
+          metadata: item.metadata,
+          files: item.files,
+          updated_at: new Date().toISOString()
+        });
+      }
+    } catch (err) {
+      // 容錯靜默處理
+    }
+  }
+
+  // 匯出全部機器人備份資料（供管理員備份與設定 Render 環境變數）
+  exportBotsData() {
+    this.syncToBackup();
+    if (fs.existsSync(BOTS_BACKUP_FILE)) {
+      try {
+        const raw = fs.readFileSync(BOTS_BACKUP_FILE, 'utf8');
+        const parsed = JSON.parse(raw);
+        const base64 = Buffer.from(raw, 'utf8').toString('base64');
+        return {
+          success: true,
+          count: parsed.length,
+          bots: parsed,
+          base64
+        };
+      } catch (e) {}
+    }
+    return { success: false, message: '查無備份檔案' };
+  }
+
+  // 還原機器人備份資料
+  restoreBotsData(botsList) {
+    if (!Array.isArray(botsList)) return { success: false, message: '無效的備份資料格式' };
+    for (const bot of botsList) {
+      if (!bot || !bot.id) continue;
+      const botDir = path.join(BOTS_DIR, bot.id);
+      fs.mkdirSync(botDir, { recursive: true });
+      if (bot.metadata) {
+        fs.writeFileSync(path.join(botDir, 'metadata.json'), JSON.stringify(bot.metadata, null, 2), 'utf8');
+      }
+      if (bot.files) {
+        for (const [relPath, content] of Object.entries(bot.files)) {
+          const targetPath = path.join(botDir, relPath);
+          fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+          if (typeof content === 'string' && content.startsWith('base64:')) {
+            fs.writeFileSync(targetPath, Buffer.from(content.replace('base64:', ''), 'base64'));
+          } else {
+            fs.writeFileSync(targetPath, content, 'utf8');
+          }
+        }
+      }
+    }
+    this.syncToBackup();
+    return { success: true, message: `成功還原 ${botsList.length} 個機器人！` };
+  }
+
+  // 打包全部機器人為 ZIP 下載
+  getBotsZip() {
+    const zip = new AdmZip();
+    if (fs.existsSync(BOTS_DIR)) {
+      const entries = fs.readdirSync(BOTS_DIR, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          zip.addLocalFolder(path.join(BOTS_DIR, entry.name), entry.name);
+        }
+      }
+    }
+    return zip.toBuffer();
   }
 
   setWsClients(clients) {
@@ -215,6 +440,7 @@ class BotManager {
       console.error('背景依賴安裝例外:', e.message);
     });
 
+    this.syncToBackup();
     return metadata;
   }
 
@@ -236,6 +462,7 @@ class BotManager {
     }
     this.logs.delete(botId);
     this.stats.delete(botId);
+    this.syncToBackup();
     this.broadcast({ type: 'bot_deleted', botId });
     return true;
   }
@@ -684,6 +911,7 @@ class BotManager {
       } catch (e) {}
     }
     this.broadcast({ type: 'bot_status', botId, status });
+    this.syncToBackup();
   }
 
   listFiles(botId) {
@@ -736,6 +964,7 @@ class BotManager {
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
     fs.writeFileSync(fullPath, content, 'utf8');
     this.appendLog(botId, `\x1b[36m[RPJG-EDITOR]\x1b[0m 檔案已更新儲存: ${safePath}`);
+    this.syncToBackup();
     return true;
   }
 
@@ -745,6 +974,7 @@ class BotManager {
     const fullPath = path.join(BOTS_DIR, botId, safeName);
     fs.writeFileSync(fullPath, buffer);
     this.appendLog(botId, `\x1b[32m[RPJG-UPLOAD]\x1b[0m 檔案已成功上傳: ${safeName}`);
+    this.syncToBackup();
     return true;
   }
 

@@ -380,6 +380,42 @@ app.post('/api/bots/:id/files/content', requireAuth, checkBotAccess, (req, res) 
   }
 });
 
+// 機器人雲端永續備份與匯出 API (僅限最高管理員)
+app.get('/api/admin/backup/bots', requireAuth, requireSuperAdmin, (req, res) => {
+  try {
+    const result = botManager.exportBotsData();
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.post('/api/admin/backup/bots/restore', requireAuth, requireSuperAdmin, (req, res) => {
+  try {
+    const { bots, base64 } = req.body;
+    let targetList = bots;
+    if (!targetList && base64) {
+      const decoded = Buffer.from(base64, 'base64').toString('utf8');
+      targetList = JSON.parse(decoded);
+    }
+    const result = botManager.restoreBotsData(targetList);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get('/api/admin/backup/bots/zip', requireAuth, requireSuperAdmin, (req, res) => {
+  try {
+    const zipBuffer = botManager.getBotsZip();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename=rpjg_bots_backup_${Date.now()}.zip`);
+    res.send(zipBuffer);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 app.get('*', (req, res) => {
   const indexHtml = path.join(distPath, 'index.html');
   if (path.resolve(indexHtml)) {

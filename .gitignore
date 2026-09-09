@@ -3,5 +3,7 @@ node_modules
 *.log
 .DS_Store
 dist
-server/bots/*
-!server/bots/.gitkeep
+server/bots/**/__pycache__
+server/bots/**/node_modules
+server/bots/**/.env
+

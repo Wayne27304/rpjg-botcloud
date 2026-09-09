@@ -35,6 +35,9 @@ export default function AuthManagement({ currentUser }) {
   const [copiedBannerLink, setCopiedBannerLink] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [storageStatus, setStorageStatus] = useState(null);
+  const [botsBackupCount, setBotsBackupCount] = useState(0);
+  const [copiedBackupEnv, setCopiedBackupEnv] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   const fileInputRef = useRef(null);
 
@@ -44,6 +47,54 @@ export default function AuthManagement({ currentUser }) {
     navigator.clipboard.writeText(directUrl);
     setCopiedLinkIndex(idx);
     setTimeout(() => setCopiedLinkIndex(null), 2500);
+  };
+
+  const fetchBotsBackup = () => {
+    const token = localStorage.getItem('rpjg_auth_token');
+    fetch('/api/admin/backup/bots', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          setBotsBackupCount(data.count || 0);
+        }
+      })
+      .catch(() => {});
+  };
+
+  const handleCopyBotsEnv = () => {
+    const token = localStorage.getItem('rpjg_auth_token');
+    setIsExporting(true);
+    fetch('/api/admin/backup/bots', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.base64) {
+          navigator.clipboard.writeText(data.base64);
+          setCopiedBackupEnv(true);
+          setTimeout(() => setCopiedBackupEnv(false), 3000);
+        }
+      })
+      .finally(() => setIsExporting(false));
+  };
+
+  const handleDownloadBotsZip = () => {
+    const token = localStorage.getItem('rpjg_auth_token');
+    fetch('/api/admin/backup/bots/zip', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+      .then(res => res.blob())
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `RPJG_Bots_Backup_${new Date().toISOString().slice(0, 10)}.zip`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+      })
+      .catch(err => console.error('下載備份失敗:', err));
   };
 
   // 表單資料
@@ -92,6 +143,7 @@ export default function AuthManagement({ currentUser }) {
   useEffect(() => {
     fetchUsers();
     fetchStorageStatus();
+    fetchBotsBackup();
   }, []);
 
   const handleGeneratePassword = () => {
@@ -770,6 +822,77 @@ export default function AuthManagement({ currentUser }) {
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* 機器人雲端永續防失守護 (Bot Cloud Vault) */}
+      <div className="bg-[#1e1f22] p-5 rounded-2xl border border-[#2b2d31] shadow-xl">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-[#2b2d31]">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-purple-950/60 text-purple-400 border border-purple-800/50 shrink-0">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h3 className="text-sm font-bold text-white">全自動雲端永續儲存庫 (Bot Cloud Vault)</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800/80 shrink-0">
+                  三重備份防護中
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mt-0.5">
+                徹底解決 Render 重新部署容器重置問題，保障所有買家與自訂機器人程式碼、Token、.env 永久留存。
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 shrink-0 flex-wrap sm:flex-nowrap gap-y-2">
+            <button
+              onClick={handleCopyBotsEnv}
+              disabled={isExporting}
+              className="px-3.5 py-2 rounded-xl bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-semibold transition flex items-center space-x-1.5 shadow-md shadow-discord-blurple/20 whitespace-nowrap shrink-0"
+            >
+              {copiedBackupEnv ? <Check className="w-3.5 h-3.5 text-emerald-300 shrink-0" /> : <Copy className="w-3.5 h-3.5 shrink-0" />}
+              <span>{copiedBackupEnv ? '已複製 RPJG_BOTS_BACKUP' : '複製 RPJG_BOTS_BACKUP (Render環境變數)'}</span>
+            </button>
+
+            <button
+              onClick={handleDownloadBotsZip}
+              className="px-3 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-[#35373c] text-xs font-medium transition flex items-center space-x-1.5 whitespace-nowrap shrink-0"
+              title="下載所有機器人專案 ZIP 備份包"
+            >
+              <Download className="w-3.5 h-3.5 shrink-0" />
+              <span>下載全站 Bot ZIP</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4 text-xs">
+          <div className="p-3 rounded-xl bg-[#141517] border border-[#2b2d31]">
+            <div className="text-gray-400 font-medium">第一重：Git 儲存庫追蹤</div>
+            <div className="mt-1 font-mono text-emerald-400 flex items-center space-x-1">
+              <CheckCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>server/bots/ 與 bots_backup.json</span>
+            </div>
+            <div className="text-[11px] text-gray-500 mt-0.5">已納入版本庫，推送部署永不遺失</div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#141517] border border-[#2b2d31]">
+            <div className="text-gray-400 font-medium">第二重：環境變數永續注入</div>
+            <div className="mt-1 font-mono text-indigo-400 flex items-center space-x-1">
+              <Key className="w-3.5 h-3.5 shrink-0" />
+              <span>RPJG_BOTS_BACKUP</span>
+            </div>
+            <div className="text-[11px] text-gray-500 mt-0.5">複製後填入 Render 後台即可無條件保固</div>
+          </div>
+
+          <div className="p-3 rounded-xl bg-[#141517] border border-[#2b2d31]">
+            <div className="text-gray-400 font-medium">第三重：當前已守護機器人</div>
+            <div className="mt-1 font-bold text-white flex items-center space-x-1.5">
+              <span className="text-base text-purple-400 font-mono">{botsBackupCount}</span>
+              <span>個機器人已受保護</span>
+            </div>
+            <div className="text-[11px] text-gray-500 mt-0.5">系統重啟 3 秒內自動熱喚醒在線</div>
+          </div>
         </div>
       </div>
     </div>
