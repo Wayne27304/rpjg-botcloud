@@ -1,12 +1,13 @@
 services:
   - type: web
     name: rpjg-dcbot-cloud
-    env: docker
+    runtime: docker
     plan: free
     region: singapore
     envVars:
       - key: PORT
-        value: 3001
+        value: 10000
       - key: NODE_ENV
         value: production
+
 

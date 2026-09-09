@@ -31,11 +31,11 @@ RUN npm run build
 # 建立持久化儲存目錄
 RUN mkdir -p /app/server/bots /app/server/data
 
-# 暴露通訊埠
+# 暴露通訊埠 (相容 Render 雲端預設 10000 與本地 3001)
+EXPOSE 10000
 EXPOSE 3001
 
 # 環境變數
-ENV PORT=3001
 ENV NODE_ENV=production
 
 # 啟動平台主程序
