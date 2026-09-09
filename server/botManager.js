@@ -111,7 +111,7 @@ class BotManager {
     const botDir = path.join(BOTS_DIR, botId);
     fs.mkdirSync(botDir, { recursive: true });
 
-    let detectedMainFile = mainFile || (type === 'python' ? 'bot.py' : 'index.js');
+    let detectedMainFile = mainFile;
 
     // 1. 若有上傳 ZIP 檔案，自動解壓縮
     if (zipFile && zipFile.buffer) {
@@ -120,11 +120,17 @@ class BotManager {
         zip.extractAllTo(botDir, true);
 
         // 自動掃描尋找主程式入口
-        const extracted = fs.readdirSync(botDir);
+        const extracted = fs.readdirSync(botDir).filter(f => !f.startsWith('.'));
         if (extracted.includes('bot.py')) detectedMainFile = 'bot.py';
         else if (extracted.includes('main.py')) detectedMainFile = 'main.py';
         else if (extracted.includes('index.js')) detectedMainFile = 'index.js';
         else if (extracted.includes('app.js')) detectedMainFile = 'app.js';
+        else {
+          const py = extracted.find(f => f.endsWith('.py'));
+          const js = extracted.find(f => f.endsWith('.js'));
+          if (py) detectedMainFile = py;
+          else if (js) detectedMainFile = js;
+        }
       } catch (err) {
         console.error('ZIP 解壓縮失敗:', err.message);
       }
@@ -133,9 +139,28 @@ class BotManager {
     // 2. 若有多個單一檔案上傳
     if (uploadedFiles && uploadedFiles.length > 0) {
       for (const file of uploadedFiles) {
-        const targetPath = path.join(botDir, file.originalname);
+        let cleanName = file.originalname;
+        try {
+          const utf8 = Buffer.from(file.originalname, 'latin1').toString('utf8');
+          if (utf8 && utf8.length > 0) cleanName = utf8;
+        } catch (_) {}
+        // 清理不合法字元，避免 URL query 或 shell glob 異常
+        cleanName = cleanName.replace(/[?*:"<>|]/g, '_');
+
+        const targetPath = path.join(botDir, cleanName);
         fs.writeFileSync(targetPath, file.buffer);
+
+        // 若尚未決定入口或只有單一檔案，優先以此檔案為主入口
+        if (!detectedMainFile || uploadedFiles.length === 1 || detectedMainFile === 'bot.py' || detectedMainFile === 'index.js') {
+          if (cleanName.endsWith('.py') || cleanName.endsWith('.js')) {
+            detectedMainFile = cleanName;
+          }
+        }
       }
+    }
+
+    if (!detectedMainFile) {
+      detectedMainFile = type === 'python' ? 'bot.py' : 'index.js';
     }
 
     // 3. 若無檔案，建立預設起始檔
@@ -148,6 +173,16 @@ class BotManager {
       } else {
         fs.writeFileSync(path.join(botDir, detectedMainFile), `// 由使用者自行上傳的 Node.js Bot\nconsole.log("[RPJG] 機器人正在啟動...");\nsetInterval(() => {\n  console.log("[RPJG-STATUS] 運行中");\n}, 5000);\n`);
         fs.writeFileSync(path.join(botDir, '.env'), `DISCORD_BOT_TOKEN=YOUR_BOT_TOKEN\nBOT_PREFIX=!\n`);
+      }
+    } else {
+      // 若已有檔案，建立安全標準名稱別名 (bot.py 或 index.js)
+      const isPy = type === 'python' || detectedMainFile.endsWith('.py');
+      const standardName = isPy ? 'bot.py' : 'index.js';
+      const actualMainPath = path.join(botDir, detectedMainFile);
+      if (fs.existsSync(actualMainPath) && !fs.existsSync(path.join(botDir, standardName))) {
+        try {
+          fs.copyFileSync(actualMainPath, path.join(botDir, standardName));
+        } catch (_) {}
       }
     }
 
@@ -180,8 +215,18 @@ class BotManager {
   deleteBot(botId) {
     this.stopBot(botId);
     const botDir = path.join(BOTS_DIR, botId);
-    if (fs.existsSync(botDir)) {
-      fs.rmSync(botDir, { recursive: true, force: true });
+    try {
+      if (fs.existsSync(botDir)) {
+        fs.rmSync(botDir, { recursive: true, force: true });
+      }
+    } catch (e) {
+      setTimeout(() => {
+        try {
+          if (fs.existsSync(botDir)) {
+            fs.rmSync(botDir, { recursive: true, force: true });
+          }
+        } catch (_) {}
+      }, 1000);
     }
     this.logs.delete(botId);
     this.stats.delete(botId);
@@ -202,37 +247,82 @@ class BotManager {
     }
 
     const botDir = path.join(BOTS_DIR, botId);
-    const targetFile = path.join(botDir, bot.mainFile);
-
-    if (!fs.existsSync(targetFile)) {
-      return { success: false, message: `主入口檔案 ${bot.mainFile} 不存在，請在檔案管理中確認檔名` };
+    if (!fs.existsSync(botDir)) {
+      return { success: false, message: '機器人專案目錄不存在' };
     }
 
-    this.appendLog(botId, `\x1b[35m[R.P.J.G 雲端管理員]\x1b[0m 正在為您啟動進程: ${bot.mainFile}...`);
+    // 智能入口檔案偵測與自動校正機制
+    let targetFile = path.join(botDir, bot.mainFile || '');
+    if (!bot.mainFile || !fs.existsSync(targetFile)) {
+      const allFiles = fs.readdirSync(botDir).filter(f => f !== 'metadata.json' && !f.startsWith('.'));
+      
+      const isPy = bot.type === 'python' || (bot.mainFile && bot.mainFile.endsWith('.py'));
+      let candidate = isPy 
+        ? (allFiles.find(f => f.endsWith('.py')) || allFiles.find(f => f.endsWith('.js')))
+        : (allFiles.find(f => f.endsWith('.js')) || allFiles.find(f => f.endsWith('.py')));
+
+      if (!candidate && allFiles.length > 0) {
+        candidate = allFiles[0];
+      }
+
+      if (candidate) {
+        this.appendLog(botId, `\x1b[33m[RPJG 智能修復]\x1b[0m 偵測到入口「${bot.mainFile || '未指定'}」不存在，已自動校正至現有檔案：「${candidate}」`);
+        bot.mainFile = candidate;
+        if (candidate.endsWith('.py')) bot.type = 'python';
+        if (candidate.endsWith('.js')) bot.type = 'nodejs';
+        targetFile = path.join(botDir, candidate);
+
+        try {
+          fs.writeFileSync(path.join(botDir, 'metadata.json'), JSON.stringify(bot, null, 2), 'utf8');
+        } catch (_) {}
+      } else {
+        return { success: false, message: `專案目錄內查無任何程式碼檔案，請在「檔案管理」中上傳您的 Bot 程式碼。` };
+      }
+    }
+
+    // 建立安全標準執行檔別名 (bot.py 或 index.js)，徹底根除因檔名包含問號、中文或特殊符號造成的直譯器解析失敗
+    const isPython = bot.type === 'python' || bot.mainFile.endsWith('.py');
+    const standardName = isPython ? 'bot.py' : 'index.js';
+    let executionFile = bot.mainFile;
+
+    // 若當前主檔名非標準名稱且包含非 ASCII 字元或特殊符號，拷貝成標準名稱
+    if (bot.mainFile !== standardName) {
+      const standardPath = path.join(botDir, standardName);
+      try {
+        fs.copyFileSync(targetFile, standardPath);
+        executionFile = standardName;
+        this.appendLog(botId, `\x1b[36m[RPJG-ENV]\x1b[0m 已為「${bot.mainFile}」建立雲端標準運行副本: ${standardName}`);
+      } catch (err) {
+        console.error('複製標準運行檔失敗:', err.message);
+      }
+    } else if (fs.existsSync(path.join(botDir, standardName))) {
+      executionFile = standardName;
+    }
+
+    this.appendLog(botId, `\x1b[35m[R.P.J.G 雲端管理員]\x1b[0m 正在為您啟動進程 (${executionFile})...`);
     this.updateBotStatus(botId, 'STARTING');
 
-    const isPython = bot.type === 'python' || bot.mainFile.endsWith('.py');
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
     const cmd = isPython ? pythonCmd : 'node';
-    const args = isPython ? ['-u', bot.mainFile] : [bot.mainFile];
+    const args = isPython ? ['-u', executionFile] : [executionFile];
 
     try {
       const child = spawn(cmd, args, {
         cwd: botDir,
-        env: { ...process.env, PYTHONUNBUFFERED: '1' },
-        shell: true
+        env: { ...process.env, PYTHONUNBUFFERED: '1' }
       });
 
       this.processes.set(botId, child);
+      const startTime = Date.now();
       this.stats.set(botId, {
         cpu: (Math.random() * 2 + 1).toFixed(1),
-        memory: isPython ? 32 : 45,
+        memory: isPython ? 35 : 45,
         uptime: 0,
-        startedAt: Date.now()
+        startedAt: startTime
       });
 
       this.updateBotStatus(botId, 'ONLINE');
-      this.appendLog(botId, `\x1b[32m[RPJG-SYSTEM]\x1b[0m 進程啟動完成 (PID: ${child.pid})，進入常駐監控狀態。`);
+      this.appendLog(botId, `\x1b[32m[RPJG-SYSTEM]\x1b[0m 進程啟動完成 (PID: ${child.pid})，進入常駐在線託管狀態。`);
 
       child.stdout.on('data', (data) => {
         const text = data.toString();
@@ -260,18 +350,24 @@ class BotManager {
         this.updateBotStatus(botId, 'OFFLINE');
         this.appendLog(botId, `\x1b[33m[RPJG-SYSTEM]\x1b[0m 機器人進程已退出 (退出碼: ${code})。`);
 
+        const runtimeMs = Date.now() - startTime;
+        // 如果運行時間大於 5 秒後異常退出，才進行自動重啟，避免啟動就 crash 造成無窮迴圈
         if (code !== 0 && bot.autoRestart) {
-          this.appendLog(botId, `\x1b[35m[RPJG 守護機制]\x1b[0m 偵測到異常退出，將在 3 秒後自動恢復重啟...`);
-          setTimeout(() => {
-            if (!this.processes.has(botId)) {
-              this.startBot(botId);
-            }
-          }, 3000);
+          if (runtimeMs > 5000) {
+            this.appendLog(botId, `\x1b[35m[RPJG 守護機制]\x1b[0m 偵測到運行中異常退出，將在 5 秒後自動恢復重啟...`);
+            setTimeout(() => {
+              if (!this.processes.has(botId)) {
+                this.startBot(botId);
+              }
+            }, 5000);
+          } else {
+            this.appendLog(botId, `\x1b[31m[RPJG 守護提示]\x1b[0m 機器人剛啟動即異常退出，已暫停自動重啟。請查看上方紅色錯誤訊息排查（例如缺少 Discord Token、模組未安裝等）。`);
+          }
         }
       });
 
       child.on('error', (err) => {
-        this.appendLog(botId, `\x1b[31m[PROCESS ERROR]\x1b[0m ${err.message}`);
+        this.appendLog(botId, `\x1b[31m[PROCESS ERROR]\x1b[0m 執行失敗: ${err.message} (請確認環境直譯器 ${cmd} 是否可正常調用)`);
         this.processes.delete(botId);
         this.updateBotStatus(botId, 'OFFLINE');
       });
@@ -280,7 +376,7 @@ class BotManager {
     } catch (err) {
       this.updateBotStatus(botId, 'OFFLINE');
       this.appendLog(botId, `\x1b[31m[LAUNCH ERROR]\x1b[0m ${err.message}`);
-      return { success: false, message: err.message };
+      return { success: false, message: `啟動失敗: ${err.message}` };
     }
   }
 

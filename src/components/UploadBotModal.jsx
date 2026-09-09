@@ -41,15 +41,20 @@ export default function UploadBotModal({ isOpen, onClose, onCreated }) {
     if (e.target.files) {
       const fileList = Array.from(e.target.files);
       setSelectedFiles(fileList);
-      // 自動偵測入口
-      const py = fileList.find(f => f.name === 'bot.py' || f.name === 'main.py');
-      const js = fileList.find(f => f.name === 'index.js' || f.name === 'app.js');
+      if (!botName && fileList.length > 0) {
+        setBotName(fileList[0].name.replace(/\.[^/.]+$/, ''));
+      }
+      // 自動偵測入口：支援任何 .py 或 .js 檔案
+      const py = fileList.find(f => f.name.endsWith('.py'));
+      const js = fileList.find(f => f.name.endsWith('.js'));
       if (py) {
         setBotType('python');
         setMainFile(py.name);
       } else if (js) {
         setBotType('nodejs');
         setMainFile(js.name);
+      } else if (fileList.length === 1) {
+        setMainFile(fileList[0].name);
       }
     }
   };
