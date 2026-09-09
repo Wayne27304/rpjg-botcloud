@@ -637,14 +637,14 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 shrink-0 flex-wrap sm:flex-nowrap gap-y-2">
                         {selectedBot.status === 'DISABLED' ? (
                           <button
                             onClick={() => handleResumeHosting(selectedBot.id)}
                             disabled={isActionLoading}
-                            className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 shadow-md shadow-emerald-950/40"
+                            className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 shadow-md shadow-emerald-950/40 whitespace-nowrap shrink-0"
                           >
-                            <Play className="w-3.5 h-3.5 fill-current" />
+                            <Play className="w-3.5 h-3.5 fill-current shrink-0" />
                             <span>{isSuperAdmin && selectedBot.ownerEmail && selectedBot.ownerEmail.toLowerCase() !== currentUser?.email?.toLowerCase() ? '遠端恢復託管' : '恢復/啟用託管'}</span>
                           </button>
                         ) : (
@@ -653,18 +653,18 @@ export default function App() {
                               <button
                                 onClick={() => handleStopBot(selectedBot.id)}
                                 disabled={isActionLoading}
-                                className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-500 text-white transition disabled:opacity-50 shadow-md shadow-red-950/40"
+                                className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-red-600 hover:bg-red-500 text-white transition disabled:opacity-50 shadow-md shadow-red-950/40 whitespace-nowrap shrink-0"
                               >
-                                <Square className="w-3.5 h-3.5" />
+                                <Square className="w-3.5 h-3.5 shrink-0" />
                                 <span>{isSuperAdmin && selectedBot.ownerEmail && selectedBot.ownerEmail.toLowerCase() !== currentUser?.email?.toLowerCase() ? '遠端停止' : '停止'}</span>
                               </button>
                             ) : (
                               <button
                                 onClick={() => handleStartBot(selectedBot.id)}
                                 disabled={isActionLoading}
-                                className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 shadow-md shadow-emerald-950/40"
+                                className="flex items-center space-x-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 shadow-md shadow-emerald-950/40 whitespace-nowrap shrink-0"
                               >
-                                <Play className="w-3.5 h-3.5 fill-current" />
+                                <Play className="w-3.5 h-3.5 fill-current shrink-0" />
                                 <span>{isSuperAdmin && selectedBot.ownerEmail && selectedBot.ownerEmail.toLowerCase() !== currentUser?.email?.toLowerCase() ? '遠端啟動' : '啟動'}</span>
                               </button>
                             )}
@@ -673,9 +673,9 @@ export default function App() {
                               onClick={() => handleRestartBot(selectedBot.id)}
                               disabled={isActionLoading}
                               title="重新啟動機器人"
-                              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/50 text-xs font-semibold transition disabled:opacity-50"
+                              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/50 text-xs font-semibold transition disabled:opacity-50 whitespace-nowrap shrink-0"
                             >
-                              <RefreshCw className={`w-3.5 h-3.5 ${isActionLoading ? 'animate-spin' : ''}`} />
+                              <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isActionLoading ? 'animate-spin' : ''}`} />
                               <span>{isSuperAdmin && selectedBot.ownerEmail && selectedBot.ownerEmail.toLowerCase() !== currentUser?.email?.toLowerCase() ? '遠端重啟' : '重啟'}</span>
                             </button>
 
@@ -683,7 +683,7 @@ export default function App() {
                               onClick={() => handleSuspendHosting(selectedBot.id)}
                               disabled={isActionLoading}
                               title="停用此機器人託管"
-                              className="px-3 py-2 text-xs font-medium rounded-xl bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/50 transition disabled:opacity-50"
+                              className="px-3 py-2 text-xs font-medium rounded-xl bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/50 transition disabled:opacity-50 whitespace-nowrap shrink-0"
                             >
                               <span>{isSuperAdmin && selectedBot.ownerEmail && selectedBot.ownerEmail.toLowerCase() !== currentUser?.email?.toLowerCase() ? '遠端停用託管' : '停用託管'}</span>
                             </button>
@@ -692,64 +692,64 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="flex space-x-2 mt-5 border-t border-[#2b2d31] pt-3 overflow-x-auto">
+                    <div className="flex space-x-2 mt-5 border-t border-[#2b2d31] pt-3 overflow-x-auto no-scrollbar">
                       <button
                         onClick={() => setActiveTab('console')}
-                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 ${
+                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 whitespace-nowrap ${
                           activeTab === 'console'
                             ? 'bg-discord-blurple text-white shadow-md'
                             : 'text-gray-400 hover:text-white hover:bg-[#2b2d31]'
                         }`}
                       >
-                        <Terminal className="w-3.5 h-3.5" />
+                        <Terminal className="w-3.5 h-3.5 shrink-0" />
                         <span>即時控制台 (Console)</span>
                       </button>
 
                       <button
                         onClick={() => setActiveTab('files')}
-                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 ${
+                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 whitespace-nowrap ${
                           activeTab === 'files'
                             ? 'bg-discord-blurple text-white shadow-md'
                             : 'text-gray-400 hover:text-white hover:bg-[#2b2d31]'
                         }`}
                       >
-                        <FolderCode className="w-3.5 h-3.5" />
+                        <FolderCode className="w-3.5 h-3.5 shrink-0" />
                         <span>檔案與程式碼 (IDE)</span>
                       </button>
 
                       <button
                         onClick={() => setActiveTab('env')}
-                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 ${
+                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 whitespace-nowrap ${
                           activeTab === 'env'
                             ? 'bg-discord-blurple text-white shadow-md'
                             : 'text-gray-400 hover:text-white hover:bg-[#2b2d31]'
                         }`}
                       >
-                        <KeyRound className="w-3.5 h-3.5" />
+                        <KeyRound className="w-3.5 h-3.5 shrink-0" />
                         <span>環境變數 (.env)</span>
                       </button>
 
                       <button
                         onClick={() => setActiveTab('metrics')}
-                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 ${
+                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 whitespace-nowrap ${
                           activeTab === 'metrics'
                             ? 'bg-discord-blurple text-white shadow-md'
                             : 'text-gray-400 hover:text-white hover:bg-[#2b2d31]'
                         }`}
                       >
-                        <Activity className="w-3.5 h-3.5" />
+                        <Activity className="w-3.5 h-3.5 shrink-0" />
                         <span>效能指標與分片</span>
                       </button>
 
                       <button
                         onClick={() => setActiveTab('settings')}
-                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 ${
+                        className={`flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-medium transition shrink-0 whitespace-nowrap ${
                           activeTab === 'settings'
                             ? 'bg-discord-blurple text-white shadow-md'
                             : 'text-gray-400 hover:text-white hover:bg-[#2b2d31]'
                         }`}
                       >
-                        <Settings className="w-3.5 h-3.5" />
+                        <Settings className="w-3.5 h-3.5 shrink-0" />
                         <span>實例設定</span>
                       </button>
                     </div>

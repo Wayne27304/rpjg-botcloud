@@ -406,6 +406,29 @@ async function startServer() {
     console.log(`  🌐 伺服器位址: http://0.0.0.0:${PORT}`);
     console.log(`  📡 WebSocket 連線: ws://0.0.0.0:${PORT}/ws`);
     console.log(`=============================================================\n`);
+
+    // 自動喚醒並拉起所有已託管機器人（排除 DISABLED 狀態）
+    setTimeout(async () => {
+      try {
+        const allBots = botManager.listBots(null, true);
+        for (const b of allBots) {
+          if (b.status !== 'DISABLED') {
+            console.log(`[RPJG 雲端守護] 正在為機器人 ${b.name} (${b.id}) 自動拉起在線常駐...`);
+            await botManager.startBot(b.id);
+          }
+        }
+      } catch (err) {
+        console.error('[RPJG 雲端守護] 自動拉起機器人失敗:', err.message);
+      }
+    }, 3000);
+
+    // 雲端保活機制 (Keep-Alive Self-Ping: 定期喚醒防止 Render 免費執行個體 15 分鐘無人訪問休眠)
+    const RENDER_APP_URL = process.env.RENDER_EXTERNAL_URL || 'https://rpjgchat.onrender.com';
+    setInterval(async () => {
+      try {
+        await fetch(`${RENDER_APP_URL}/api/system/stats`);
+      } catch (_) {}
+    }, 9 * 60 * 1000);
   });
 }
 

@@ -22,6 +22,7 @@ class BotManager {
     this.logs = new Map();
     this.stats = new Map();
     this.wsClients = new Set();
+    this.manualStopping = new Set();
 
     if (!fs.existsSync(BOTS_DIR)) {
       fs.mkdirSync(BOTS_DIR, { recursive: true });
@@ -491,6 +492,7 @@ class BotManager {
     const cmd = isPython ? pythonCmd : 'node';
     const args = isPython ? ['-u', executionFile] : [executionFile];
 
+    this.manualStopping.delete(botId);
     try {
       const child = spawn(cmd, args, {
         cwd: botDir,
@@ -509,13 +511,29 @@ class BotManager {
       this.updateBotStatus(botId, 'ONLINE');
       this.appendLog(botId, `\x1b[32m[RPJG-SYSTEM]\x1b[0m 進程啟動完成 (PID: ${child.pid})，進入常駐在線託管狀態。`);
 
+      const handleLogLine = (line, isError = false) => {
+        if (line.trim().length === 0) return;
+        if (isError) {
+          this.appendLog(botId, `\x1b[31m${line}\x1b[0m`);
+        } else {
+          this.appendLog(botId, line);
+        }
+
+        // 智能識別 Discord 意圖警告與排查指引
+        if (line.includes('Privileged message content intent is missing')) {
+          this.appendLog(botId, `\x1b[33m[RPJG 智能守護]\x1b[0m 偵測到 Discord 警告：Privileged message content intent is missing。`);
+          this.appendLog(botId, `\x1b[36m[RPJG 設定教學]\x1b[0m 若需讀取文字指令（如 !指令），請至 Discord 開發者後台 (https://discord.com/developers/applications) -> 點選機器人 -> 左側「Bot」-> 找到「Privileged Gateway Intents」-> 勾選開啟「MESSAGE CONTENT INTENT」與「SERVER MEMBERS INTENT」並保存變更！（若使用斜線 /指令 則已可正常運作）`);
+        } else if (line.includes('PrivilegedIntentsRequired')) {
+          this.appendLog(botId, `\x1b[31m[RPJG 權限錯誤排查]\x1b[0m 機器人代碼啟用了 Privileged Intents，但 Discord 開發者後台尚未勾選開啟！`);
+          this.appendLog(botId, `\x1b[33m[RPJG 解決步驟]\x1b[0m 請至 Discord Developer Portal -> 點選機器人 -> Bot -> 勾選開啟「MESSAGE CONTENT INTENT」與「SERVER MEMBERS INTENT」，儲存後重啟機器人即可正常在線！`);
+        }
+      };
+
       child.stdout.on('data', (data) => {
         const text = data.toString();
         const lines = text.split('\n');
         for (const line of lines) {
-          if (line.trim().length > 0) {
-            this.appendLog(botId, line);
-          }
+          handleLogLine(line, false);
         }
       });
 
@@ -523,9 +541,7 @@ class BotManager {
         const text = data.toString();
         const lines = text.split('\n');
         for (const line of lines) {
-          if (line.trim().length > 0) {
-            this.appendLog(botId, `\x1b[31m${line}\x1b[0m`);
-          }
+          handleLogLine(line, true);
         }
       });
 
@@ -536,12 +552,19 @@ class BotManager {
         this.appendLog(botId, `\x1b[33m[RPJG-SYSTEM]\x1b[0m 機器人進程已退出 (退出碼: ${code})。`);
 
         const runtimeMs = Date.now() - startTime;
-        // 如果運行時間大於 5 秒後異常退出，才進行自動重啟，避免啟動就 crash 造成無窮迴圈
-        if (code !== 0 && bot.autoRestart) {
-          if (runtimeMs > 5000) {
-            this.appendLog(botId, `\x1b[35m[RPJG 守護機制]\x1b[0m 偵測到運行中異常退出，將在 5 秒後自動恢復重啟...`);
+        const isManual = this.manualStopping.has(botId);
+        if (isManual) {
+          this.manualStopping.delete(botId);
+          return;
+        }
+
+        // 非人為手動停止，且機器人設定為自動重啟（預設為開啟），且運行時間大於 4 秒
+        const currentBot = this.getBot(botId);
+        if (currentBot && currentBot.status !== 'DISABLED' && currentBot.autoRestart !== false) {
+          if (runtimeMs > 4000) {
+            this.appendLog(botId, `\x1b[35m[RPJG 守護機制]\x1b[0m 偵測到運行中非預期退出，將在 5 秒後自動重啟恢復在線...`);
             setTimeout(() => {
-              if (!this.processes.has(botId)) {
+              if (!this.processes.has(botId) && this.getBot(botId)?.status !== 'DISABLED') {
                 this.startBot(botId);
               }
             }, 5000);
@@ -566,6 +589,7 @@ class BotManager {
   }
 
   stopBot(botId) {
+    this.manualStopping.add(botId);
     const child = this.processes.get(botId);
     if (!child) {
       return { success: false, message: '機器人未在運行中' };

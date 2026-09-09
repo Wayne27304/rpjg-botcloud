@@ -92,38 +92,38 @@ export default function Console({ bot, onStart, onStop, onRestart, onSuspend, on
   const isDisabled = bot?.status === 'DISABLED';
 
   return (
-    <div className="flex flex-col h-full bg-[#111215] rounded-xl border border-[#2b2d31] overflow-hidden shadow-2xl">
-      <div className="flex items-center justify-between px-4 py-3 bg-[#1e1f22] border-b border-[#2b2d31]">
-        <div className="flex items-center space-x-3">
-          <div className="flex space-x-1.5">
+    <div className="flex flex-col h-[560px] bg-[#111215] rounded-xl border border-[#2b2d31] overflow-hidden shadow-2xl">
+      <div className="flex items-center justify-between px-3.5 py-2.5 bg-[#1e1f22] border-b border-[#2b2d31] gap-2 overflow-x-auto select-none no-scrollbar">
+        <div className="flex items-center space-x-2.5 shrink-0 min-w-0">
+          <div className="flex space-x-1.5 shrink-0">
             <div className="w-3 h-3 rounded-full bg-red-500/80"></div>
             <div className="w-3 h-3 rounded-full bg-amber-500/80"></div>
             <div className="w-3 h-3 rounded-full bg-emerald-500/80"></div>
           </div>
-          <div className="h-4 w-px bg-gray-700"></div>
-          <div className="flex items-center space-x-2 text-xs font-mono text-gray-400">
-            <TerminalIcon className="w-3.5 h-3.5 text-discord-blurple" />
-            <span>bash: ~/{bot?.name || 'terminal'}</span>
+          <div className="h-4 w-px bg-gray-700 shrink-0"></div>
+          <div className="flex items-center space-x-1.5 text-xs font-mono text-gray-400 shrink-0">
+            <TerminalIcon className="w-3.5 h-3.5 text-discord-blurple shrink-0" />
+            <span className="truncate max-w-[120px] sm:max-w-[220px]">bash: ~/{bot?.name || 'terminal'}</span>
           </div>
           {isDisabled ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/90 text-amber-300 border border-amber-800/80">
+            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/90 text-amber-300 border border-amber-800/80 whitespace-nowrap shrink-0">
               ⏸️ 託管已停用
             </span>
           ) : (
-            <span className="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-950/80 text-purple-300 border border-purple-800/60">
+            <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-950/80 text-purple-300 border border-purple-800/60 whitespace-nowrap shrink-0">
               RPJG 實時串流引擎
             </span>
           )}
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 shrink-0 flex-nowrap">
           {isDisabled ? (
             <button
               onClick={() => onResume && onResume(bot.id)}
               disabled={isActionLoading}
-              className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
+              className="h-8 flex items-center space-x-1.5 px-3 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 whitespace-nowrap shrink-0"
             >
-              <Play className="w-3 h-3 fill-current" />
+              <Play className="w-3.5 h-3.5 fill-current shrink-0" />
               <span>恢復/啟用託管</span>
             </button>
           ) : (
@@ -132,18 +132,18 @@ export default function Console({ bot, onStart, onStop, onRestart, onSuspend, on
                 <button
                   onClick={() => onStop(bot.id)}
                   disabled={isActionLoading}
-                  className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold rounded bg-red-600/90 hover:bg-red-500 text-white transition disabled:opacity-50"
+                  className="h-8 flex items-center space-x-1.5 px-3 text-xs font-semibold rounded bg-red-600/90 hover:bg-red-500 text-white transition disabled:opacity-50 whitespace-nowrap shrink-0"
                 >
-                  <Square className="w-3 h-3" />
+                  <Square className="w-3.5 h-3.5 shrink-0" />
                   <span>停止運行</span>
                 </button>
               ) : (
                 <button
                   onClick={() => onStart(bot.id)}
                   disabled={isActionLoading || isStarting}
-                  className="flex items-center space-x-1.5 px-3 py-1 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50"
+                  className="h-8 flex items-center space-x-1.5 px-3 text-xs font-semibold rounded bg-emerald-600 hover:bg-emerald-500 text-white transition disabled:opacity-50 whitespace-nowrap shrink-0"
                 >
-                  <Play className="w-3 h-3 fill-current" />
+                  <Play className="w-3.5 h-3.5 fill-current shrink-0" />
                   <span>{isStarting ? '啟動中...' : '啟動進程'}</span>
                 </button>
               )}
@@ -153,9 +153,9 @@ export default function Console({ bot, onStart, onStop, onRestart, onSuspend, on
                 onClick={() => onRestart(bot.id)}
                 disabled={isActionLoading}
                 title="重新啟動機器人"
-                className="flex items-center space-x-1 px-2.5 py-1 text-xs font-medium rounded bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/50 transition disabled:opacity-50"
+                className="h-8 flex items-center space-x-1 px-2.5 text-xs font-medium rounded bg-indigo-950/80 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/50 transition disabled:opacity-50 whitespace-nowrap shrink-0"
               >
-                <RefreshCw className={`w-3 h-3 ${isActionLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isActionLoading ? 'animate-spin' : ''}`} />
                 <span>重啟</span>
               </button>
 
@@ -164,19 +164,19 @@ export default function Console({ bot, onStart, onStop, onRestart, onSuspend, on
                 onClick={() => onSuspend && onSuspend(bot.id)}
                 disabled={isActionLoading}
                 title="停用此機器人託管"
-                className="px-2.5 py-1 text-xs font-medium rounded bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/50 transition disabled:opacity-50"
+                className="h-8 flex items-center px-2.5 text-xs font-medium rounded bg-amber-950/40 hover:bg-amber-900/60 text-amber-300 border border-amber-800/50 transition disabled:opacity-50 whitespace-nowrap shrink-0"
               >
                 <span>停用託管</span>
               </button>
             </>
           )}
 
-          <div className="h-4 w-px bg-gray-700"></div>
+          <div className="h-4 w-px bg-gray-700 shrink-0"></div>
 
           <button
             onClick={() => setAutoScroll(!autoScroll)}
             title={autoScroll ? '自動滾動：開啟' : '自動滾動：關閉'}
-            className={`p-1.5 rounded transition ${autoScroll ? 'bg-indigo-950 text-indigo-400 border border-indigo-700/60' : 'bg-gray-800 text-gray-400'}`}
+            className={`h-8 w-8 flex items-center justify-center rounded transition shrink-0 ${autoScroll ? 'bg-indigo-950 text-indigo-400 border border-indigo-700/60' : 'bg-gray-800 text-gray-400'}`}
           >
             <ArrowDownCircle className="w-3.5 h-3.5" />
           </button>
@@ -184,7 +184,7 @@ export default function Console({ bot, onStart, onStop, onRestart, onSuspend, on
           <button
             onClick={handleDownloadLogs}
             title="下載日誌 (.log)"
-            className="p-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition"
+            className="h-8 w-8 flex items-center justify-center rounded bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-white transition shrink-0"
           >
             <Download className="w-3.5 h-3.5" />
           </button>
@@ -192,7 +192,7 @@ export default function Console({ bot, onStart, onStop, onRestart, onSuspend, on
           <button
             onClick={handleClearLogs}
             title="清除控制台"
-            className="p-1.5 rounded bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-red-400 transition"
+            className="h-8 w-8 flex items-center justify-center rounded bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-red-400 transition shrink-0"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -201,8 +201,7 @@ export default function Console({ bot, onStart, onStop, onRestart, onSuspend, on
 
       <div
         ref={consoleBottomRef}
-        className="flex-1 p-4 font-mono text-xs overflow-y-auto leading-relaxed select-text space-y-1 bg-[#0d0e11]"
-        style={{ minHeight: '340px', maxHeight: '520px' }}
+        className="flex-1 min-h-0 p-4 font-mono text-xs overflow-y-auto leading-relaxed select-text space-y-1 bg-[#0d0e11]"
       >
         <div className="p-3 mb-3 rounded border border-indigo-900/60 bg-indigo-950/20 text-indigo-300 text-[11px] leading-normal font-sans">
           <div className="flex items-center space-x-2 mb-1 font-bold text-indigo-200">
