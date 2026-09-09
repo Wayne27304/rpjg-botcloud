@@ -412,9 +412,9 @@ export default function App() {
 
             {/* 使用者身分卡片與登出 */}
             <div className="flex items-center space-x-2 pl-2 border-l border-gray-700">
-              <div className="hidden xl:flex flex-col text-right">
-                <span className="text-xs font-bold text-white font-mono flex items-center space-x-1">
-                  <span>{currentUser.displayName || currentUser.email}</span>
+              <div className="flex flex-col text-right max-w-[140px] sm:max-w-none truncate">
+                <span className="text-xs font-bold text-white font-mono truncate">
+                  {currentUser.displayName || currentUser.email}
                 </span>
                 <span className="text-[10px] text-emerald-400 font-mono">
                   {currentUser.expiresAt ? `效期: ${new Date(currentUser.expiresAt).toLocaleDateString('zh-TW')}` : '永久授權'}
@@ -423,7 +423,7 @@ export default function App() {
               <button
                 onClick={handleLogout}
                 title="登出帳號"
-                className="p-1.5 rounded-lg bg-gray-800 hover:bg-red-950/60 hover:text-red-400 text-gray-400 transition"
+                className="p-1.5 rounded-lg bg-gray-800 hover:bg-red-950/60 hover:text-red-400 text-gray-400 transition shrink-0"
               >
                 <LogOut className="w-4 h-4" />
               </button>

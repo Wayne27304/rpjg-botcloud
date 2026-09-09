@@ -314,16 +314,42 @@ class AuthManager {
 
   // 登入驗證
   login(email, password) {
-    const cleanEmail = (email || '').trim().toLowerCase();
-    const users = this.getUsers();
-    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
-
-    if (!user) {
-      return { success: false, message: '查無此帳號，請確認 Email 是否已被管理員授權' };
+    let cleanEmail = (email || '').trim().toLowerCase();
+    if (!cleanEmail) {
+      return { success: false, message: '請輸入 Email 帳號' };
     }
 
-    if (user.passwordHash !== this.hashPassword(password)) {
-      return { success: false, message: '密碼錯誤，請重新輸入' };
+    const users = this.getUsers();
+    let user = users.find(u => u.email.toLowerCase() === cleanEmail);
+
+    // 如果使用者只輸入了帳號前綴沒打 @gmail.com，自動相容
+    if (!user && !cleanEmail.includes('@')) {
+      const withGmail = cleanEmail + '@gmail.com';
+      user = users.find(u => u.email.toLowerCase() === withGmail);
+      if (user) {
+        cleanEmail = withGmail;
+      }
+    }
+
+    if (!user) {
+      return {
+        success: false,
+        message: `查無授權帳號「${email}」！請確認輸入的 Email 是否與管理員授權的一致。`
+      };
+    }
+
+    // 密碼比對：支援原始密碼、前後去空格、明文提示比對
+    const rawPwd = password || '';
+    const trimmedPwd = rawPwd.trim();
+    const isMatch = (user.passwordHash === this.hashPassword(rawPwd)) ||
+                    (user.passwordHash === this.hashPassword(trimmedPwd)) ||
+                    (user.plainPasswordHint && (user.plainPasswordHint === rawPwd || user.plainPasswordHint === trimmedPwd));
+
+    if (!isMatch) {
+      return {
+        success: false,
+        message: '密碼錯誤！請輸入管理員簽發給您的專屬授權密碼（注意大小寫與勿多按空格）。'
+      };
     }
 
     if (user.status === 'SUSPENDED') {

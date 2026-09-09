@@ -1,16 +1,45 @@
-import React, { useState } from 'react';
-import { Bot, Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Bot, Lock, Mail, ArrowRight, AlertCircle, Sparkles, Loader2 } from 'lucide-react';
 
 export default function Login({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    if (!email.trim() || !password.trim()) return;
+  // 支援 URL 一鍵免密直登功能 (例如 ?email=...&pwd=...)
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      let emailParam = urlParams.get('email') || urlParams.get('user') || urlParams.get('account');
+      let pwdParam = urlParams.get('pwd') || urlParams.get('key') || urlParams.get('password');
 
+      // 也支援 hash 傳遞 (避免某些環境轉址丟失 query)
+      if ((!emailParam || !pwdParam) && window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        if (!emailParam) emailParam = hashParams.get('email') || hashParams.get('user');
+        if (!pwdParam) pwdParam = hashParams.get('pwd') || hashParams.get('key');
+      }
+
+      if (emailParam) {
+        setEmail(emailParam);
+      }
+      if (pwdParam) {
+        setPassword(pwdParam);
+      }
+
+      // 若兩者皆有，自動執行登入
+      if (emailParam && pwdParam) {
+        setIsAutoLoggingIn(true);
+        performLogin(emailParam.trim(), pwdParam.trim());
+      }
+    } catch (e) {
+      console.error('解析 URL 登入參數失敗:', e);
+    }
+  }, []);
+
+  const performLogin = async (targetEmail, targetPassword) => {
     setIsLoading(true);
     setErrorMessage('');
 
@@ -18,22 +47,35 @@ export default function Login({ onLoginSuccess }) {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password })
+        body: JSON.stringify({ email: targetEmail.trim(), password: targetPassword.trim() })
       });
       const data = await res.json();
 
       if (data.success) {
         localStorage.setItem('rpjg_auth_token', data.token);
         localStorage.setItem('rpjg_auth_user', JSON.stringify(data.user));
+        
+        // 登入成功後清除網址敏感參數
+        if (window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
         onLoginSuccess(data.user);
       } else {
         setErrorMessage(data.message || '登入失敗，請確認帳號與密碼');
+        setIsAutoLoggingIn(false);
       }
     } catch (err) {
-      setErrorMessage('網路連線異常或伺服器未啟動');
+      setErrorMessage('網路連線異常或伺服器未啟動，請稍候重試');
+      setIsAutoLoggingIn(false);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    if (!email.trim() || !password.trim()) return;
+    await performLogin(email, password);
   };
 
   return (
@@ -59,6 +101,14 @@ export default function Login({ onLoginSuccess }) {
           </p>
         </div>
 
+        {/* 自動直登提示 */}
+        {isAutoLoggingIn && (
+          <div className="mb-5 p-3.5 rounded-xl bg-indigo-950/60 border border-indigo-700/60 flex items-center space-x-2.5 text-xs text-indigo-200">
+            <Loader2 className="w-4 h-4 text-indigo-400 animate-spin shrink-0" />
+            <span>偵測到專屬直登憑證，正在為您自動安全登入中...</span>
+          </div>
+        )}
+
         {/* 錯誤警示訊息 */}
         {errorMessage && (
           <div className="mb-5 p-3.5 rounded-xl bg-red-950/40 border border-red-800/60 flex items-start space-x-2.5 text-xs text-red-300 animate-shake">
@@ -76,11 +126,11 @@ export default function Login({ onLoginSuccess }) {
             <div className="relative">
               <Mail className="w-4 h-4 text-gray-400 absolute left-3.5 top-3" />
               <input
-                type="email"
+                type="text"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="name@gmail.com"
+                placeholder="例如: client@gmail.com"
                 className="w-full bg-[#141517] text-xs text-white pl-10 pr-3.5 py-2.5 rounded-xl border border-[#35373c] focus:outline-none focus:border-discord-blurple transition"
               />
             </div>
@@ -97,7 +147,7 @@ export default function Login({ onLoginSuccess }) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                placeholder="請輸入密碼"
+                placeholder="請輸入管理員核發之專屬密碼"
                 className="w-full bg-[#141517] text-xs text-white pl-10 pr-3.5 py-2.5 rounded-xl border border-[#35373c] focus:outline-none focus:border-discord-blurple transition"
               />
             </div>
@@ -109,7 +159,10 @@ export default function Login({ onLoginSuccess }) {
             className="w-full mt-2 flex items-center justify-center space-x-2 py-2.5 px-4 rounded-xl bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-semibold shadow-lg shadow-discord-blurple/30 transition disabled:opacity-50"
           >
             {isLoading ? (
-              <span>驗證授權中...</span>
+              <span className="flex items-center space-x-1.5">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>驗證授權中...</span>
+              </span>
             ) : (
               <>
                 <span>登入平台</span>
@@ -118,6 +171,10 @@ export default function Login({ onLoginSuccess }) {
             )}
           </button>
         </form>
+
+        <div className="mt-4 p-2.5 rounded-xl bg-[#141517] border border-gray-800 text-[11px] text-gray-400 leading-relaxed text-center">
+          💡 <strong>買家提示</strong>：如尚未取得授權帳號或忘記密碼，請直接聯絡管理員 <span className="text-discord-blurple font-mono">ryanryan311311@gmail.com</span> 開通或索取<strong>一鍵直登連結</strong>！
+        </div>
       </div>
 
       {/* 底部備註 */}
