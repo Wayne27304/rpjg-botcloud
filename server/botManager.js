@@ -209,6 +209,11 @@ class BotManager {
       `\x1b[36m[RPJG-CLOUD]\x1b[0m 專屬獨立沙盒空間已劃分 | 擁有者: ${metadata.ownerEmail}`
     ]);
 
+    // 上傳後立即在背景自動分析並安裝前置依賴
+    this.ensureDependencies(botId, botDir, metadata.type).catch(e => {
+      console.error('背景依賴安裝例外:', e.message);
+    });
+
     return metadata;
   }
 
@@ -234,7 +239,180 @@ class BotManager {
     return true;
   }
 
-  startBot(botId) {
+  // 執行前置套件安裝子程序
+  runInstallCommand(botId, botDir, tool, args) {
+    return new Promise((resolve) => {
+      let cmd = '';
+      if (tool === 'pip') {
+        cmd = process.platform === 'win32' ? 'pip' : 'pip3';
+      } else {
+        cmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+      }
+
+      let child = null;
+      try {
+        child = spawn(cmd, args, {
+          cwd: botDir,
+          env: { ...process.env, PYTHONUNBUFFERED: '1' }
+        });
+      } catch (err) {
+        if (tool === 'pip' && process.platform !== 'win32') {
+          try {
+            child = spawn('python3', ['-m', 'pip', ...args], { cwd: botDir, env: { ...process.env } });
+          } catch (e2) {
+            this.appendLog(botId, `\x1b[31m[DEPS ERROR]\x1b[0m 調用 pip 失敗: ${err.message}`);
+            return resolve(false);
+          }
+        } else {
+          this.appendLog(botId, `\x1b[31m[DEPS ERROR]\x1b[0m 安裝指令啟動失敗: ${err.message}`);
+          return resolve(false);
+        }
+      }
+
+      child.stdout.on('data', (data) => {
+        const lines = data.toString().split('\n');
+        for (const line of lines) {
+          if (line.trim().length > 0) {
+            this.appendLog(botId, `\x1b[90m[INSTALL]\x1b[0m ${line}`);
+          }
+        }
+      });
+
+      child.stderr.on('data', (data) => {
+        const lines = data.toString().split('\n');
+        for (const line of lines) {
+          if (line.trim().length > 0 && !line.includes('WARNING') && !line.includes('notice')) {
+            this.appendLog(botId, `\x1b[33m[INSTALL-INFO]\x1b[0m ${line}`);
+          }
+        }
+      });
+
+      child.on('close', (code) => {
+        resolve(code === 0);
+      });
+
+      child.on('error', () => {
+        if (tool === 'pip' && process.platform !== 'win32') {
+          const fb = spawn('python3', ['-m', 'pip', ...args], { cwd: botDir });
+          fb.on('close', () => resolve(true));
+          fb.on('error', () => resolve(false));
+        } else {
+          resolve(false);
+        }
+      });
+    });
+  }
+
+  // 智能前置依賴分析與自動安裝
+  async ensureDependencies(botId, botDir, botType) {
+    if (!fs.existsSync(botDir)) return;
+
+    const allFiles = fs.readdirSync(botDir).filter(f => !f.startsWith('.'));
+    const isPython = botType === 'python' || allFiles.some(f => f.endsWith('.py'));
+
+    if (isPython) {
+      const reqFile = path.join(botDir, 'requirements.txt');
+      if (fs.existsSync(reqFile)) {
+        this.appendLog(botId, '\x1b[36m[RPJG 依賴系統]\x1b[0m 偵測到 requirements.txt，正在自動安裝所有前置套件...');
+        let ok = await this.runInstallCommand(botId, botDir, 'pip', ['install', '-r', 'requirements.txt', '--break-system-packages']);
+        if (!ok) {
+          await this.runInstallCommand(botId, botDir, 'pip', ['install', '-r', 'requirements.txt']);
+        }
+        this.appendLog(botId, '\x1b[32m[RPJG 依賴系統]\x1b[0m requirements.txt 套件安裝流程完成！');
+        return;
+      }
+
+      // 提取所有 .py 中的 import 語句
+      const pyFiles = allFiles.filter(f => f.endsWith('.py'));
+      const detectedImports = new Set();
+
+      const standardLib = new Set([
+        'os', 'sys', 'time', 'json', 'math', 'random', 're', 'datetime', 'asyncio',
+        'typing', 'collections', 'threading', 'urllib', 'subprocess', 'pathlib',
+        'socket', 'sqlite3', 'logging', 'shutil', 'traceback', 'copy', 'io',
+        'functools', 'itertools', 'struct', 'enum', 'tempfile', 'glob', 'uuid',
+        'hashlib', 'base64', 'hmac', 'unittest', 'http', 'email', 'platform',
+        'inspect', 'cmath', 'decimal', 'fractions', 'statistics', 'bisect', 'heapq',
+        'array', 'queue', 'weakref', 'types', 'gc', 'dis', 'pydoc', 'zipfile',
+        'tarfile', 'csv', 'configparser', 'xml', 'html', 'gettext', 'locale',
+        'calendar', 'timeit', 'profile', 'warnings', 'contextlib', 'abc', 'atexit',
+        'builtins', 'multiprocessing', 'concurrent', 'ctypes', 'select', 'signal',
+        'mmap', 'operator', 'numbers', 'keyword', 'token', 'tokenize', 'ast'
+      ]);
+
+      const localFiles = new Set(allFiles.map(f => f.replace(/\.py$/, '').toLowerCase()));
+
+      for (const file of pyFiles) {
+        try {
+          const content = fs.readFileSync(path.join(botDir, file), 'utf8');
+          const regex = /^(?:import|from)\s+([a-zA-Z0-9_\.]+)/gm;
+          let match;
+          while ((match = regex.exec(content)) !== null) {
+            const rootModule = match[1].split('.')[0].toLowerCase();
+            if (!standardLib.has(rootModule) && !localFiles.has(rootModule) && rootModule.length > 1) {
+              detectedImports.add(rootModule);
+            }
+          }
+        } catch (_) {}
+      }
+
+      const packageMap = {
+        discord: 'discord.py',
+        dotenv: 'python-dotenv',
+        pil: 'Pillow',
+        bs4: 'beautifulsoup4',
+        yaml: 'pyyaml',
+        cv2: 'opencv-python',
+        google: 'google-generativeai',
+        telegram: 'python-telegram-bot',
+        youtube_dl: 'youtube-dl',
+        ytdl: 'yt-dlp',
+        yt_dlp: 'yt-dlp',
+        mysql: 'mysql-connector-python',
+        postgres: 'psycopg2-binary'
+      };
+
+      const packagesToInstall = [];
+      for (const mod of detectedImports) {
+        const pkg = packageMap[mod] || mod;
+        if (!packagesToInstall.includes(pkg)) {
+          packagesToInstall.push(pkg);
+        }
+      }
+
+      // 針對 Discord 機器人保底確保核心套件
+      if (!packagesToInstall.includes('discord.py') && !packagesToInstall.includes('discord')) {
+        packagesToInstall.push('discord.py');
+      }
+      if (!packagesToInstall.includes('python-dotenv') && !packagesToInstall.includes('dotenv')) {
+        packagesToInstall.push('python-dotenv');
+      }
+
+      if (packagesToInstall.length > 0) {
+        this.appendLog(botId, `\x1b[36m[RPJG 智能依賴檢測]\x1b[0m 掃描到需要安裝前置套件: ${packagesToInstall.join(', ')}`);
+        this.appendLog(botId, `\x1b[35m[RPJG 自動安裝]\x1b[0m 正在為您自動補齊所有依賴庫 (pip install)...`);
+        
+        let ok = await this.runInstallCommand(botId, botDir, 'pip', ['install', ...packagesToInstall, '--break-system-packages', '--quiet']);
+        if (!ok) {
+          await this.runInstallCommand(botId, botDir, 'pip', ['install', ...packagesToInstall, '--quiet']);
+        }
+        this.appendLog(botId, `\x1b[32m[RPJG 自動安裝]\x1b[0m 前置依賴套件全數安裝完成！`);
+      }
+    } else {
+      // Node.js 專案處理
+      const pkgJsonPath = path.join(botDir, 'package.json');
+      if (fs.existsSync(pkgJsonPath)) {
+        const nodeModulesPath = path.join(botDir, 'node_modules');
+        if (!fs.existsSync(nodeModulesPath)) {
+          this.appendLog(botId, '\x1b[36m[RPJG 依賴系統]\x1b[0m 偵測到 package.json，正在自動執行 npm install...');
+          await this.runInstallCommand(botId, botDir, 'npm', ['install', '--production']);
+          this.appendLog(botId, '\x1b[32m[RPJG 自動安裝]\x1b[0m npm 前置模組安裝完畢！');
+        }
+      }
+    }
+  }
+
+  async startBot(botId) {
     if (this.processes.has(botId)) {
       return { success: false, message: '機器人已在運行中' };
     }
@@ -299,8 +477,15 @@ class BotManager {
       executionFile = standardName;
     }
 
-    this.appendLog(botId, `\x1b[35m[R.P.J.G 雲端管理員]\x1b[0m 正在為您啟動進程 (${executionFile})...`);
+    // 啟動前置依賴檢查與安裝
     this.updateBotStatus(botId, 'STARTING');
+    try {
+      await this.ensureDependencies(botId, botDir, bot.type);
+    } catch (e) {
+      this.appendLog(botId, `\x1b[33m[RPJG-DEPS]\x1b[0m 依賴檢查提示: ${e.message}`);
+    }
+
+    this.appendLog(botId, `\x1b[35m[R.P.J.G 雲端管理員]\x1b[0m 正在為您啟動進程 (${executionFile})...`);
 
     const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
     const cmd = isPython ? pythonCmd : 'node';

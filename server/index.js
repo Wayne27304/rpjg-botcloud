@@ -303,8 +303,8 @@ app.delete('/api/bots/:id', requireAuth, checkBotAccess, (req, res) => {
   res.json({ success: ok });
 });
 
-app.post('/api/bots/:id/start', requireAuth, checkBotAccess, (req, res) => {
-  const result = botManager.startBot(req.params.id);
+app.post('/api/bots/:id/start', requireAuth, checkBotAccess, async (req, res) => {
+  const result = await botManager.startBot(req.params.id);
   res.json(result);
 });
 
