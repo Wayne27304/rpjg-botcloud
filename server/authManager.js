@@ -119,9 +119,17 @@ class AuthManager {
         status: 'ACTIVE',
         expiresAt: null, // 永久授權
         maxBots: 50,
+        maxStorageMB: 10240, // 10GB
         createdAt: new Date().toISOString(),
         note: '系統最高管理者 (R.P.J.G 總管)'
       });
+    }
+
+    // 確保所有使用者都有 maxStorageMB 欄位 (預設 100MB，總管 10240MB)
+    for (const u of users) {
+      if (!u.maxStorageMB) {
+        u.maxStorageMB = u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ? 10240 : 100;
+      }
     }
 
     this.usersCache = users;
@@ -163,6 +171,7 @@ class AuthManager {
               status: row.status || 'ACTIVE',
               expiresAt: row.expires_at || null,
               maxBots: row.max_bots || 5,
+              maxStorageMB: row.max_storage_mb || (row.role === 'SUPER_ADMIN' ? 10240 : 100),
               note: row.note || '',
               createdAt: row.created_at || new Date().toISOString()
             };
@@ -213,7 +222,7 @@ class AuthManager {
     this.saveLocalUsers(users);
   }
 
-  // 單一使用者同步至 Supabase
+  // 單一使用者同步至 Supabase (具備欄位自動降級防護)
   async syncUserToCloud(user) {
     if (!this.supabase || !this.isCloudActive) return;
 
@@ -228,14 +237,24 @@ class AuthManager {
         status: user.status || 'ACTIVE',
         expires_at: user.expiresAt || null,
         max_bots: user.maxBots || 5,
+        max_storage_mb: user.maxStorageMB || (user.role === 'SUPER_ADMIN' ? 10240 : 100),
         note: user.note || '',
         created_at: user.createdAt || new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
 
-      const { error } = await this.supabase
+      let { error } = await this.supabase
         .from('rpjg_bot_users')
         .upsert(payload, { onConflict: 'email' });
+
+      // 若 Supabase 還沒新增 max_storage_mb 欄位，自動移除欄位降級寫入
+      if (error && error.message && error.message.includes('max_storage_mb')) {
+        delete payload.max_storage_mb;
+        const retry = await this.supabase
+          .from('rpjg_bot_users')
+          .upsert(payload, { onConflict: 'email' });
+        error = retry.error;
+      }
 
       if (error) {
         console.error(`[CLOUD] ⚠️ 同步使用者 ${user.email} 至 Supabase 失敗:`, error.message);
@@ -384,8 +403,16 @@ class AuthManager {
     };
   }
 
-  // 管理員授權新 Gmail 帳號
-  authorizeUser({ email, password, durationType, customDays, maxBots, note, displayName }) {
+  // 根據 Email 獲取單一使用者
+  getUser(email) {
+    if (!email) return null;
+    const cleanEmail = email.trim().toLowerCase();
+    const users = this.getUsers();
+    return users.find(u => u.email.toLowerCase() === cleanEmail) || null;
+  }
+
+  // 管理員授權新 Gmail 帳號 (包含派發空間設定)
+  authorizeUser({ email, password, durationType, customDays, maxBots, maxStorageMB, note, displayName }) {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail.includes('@')) {
       return { success: false, message: '請提供有效的 Gmail / Email 地址' };
@@ -410,6 +437,7 @@ class AuthManager {
 
     const existingIndex = users.findIndex(u => u.email.toLowerCase() === cleanEmail);
     const pwd = password || ('rpjg_' + Math.random().toString(36).substring(2, 8));
+    const storageQuotaMB = Math.max(10, parseInt(maxStorageMB) || 100);
     let targetUser = null;
 
     if (existingIndex >= 0) {
@@ -418,6 +446,7 @@ class AuthManager {
       users[existingIndex].expiresAt = expiresAt;
       users[existingIndex].status = 'ACTIVE';
       users[existingIndex].maxBots = parseInt(maxBots) || 5;
+      users[existingIndex].maxStorageMB = storageQuotaMB;
       users[existingIndex].note = note || users[existingIndex].note;
       if (displayName) users[existingIndex].displayName = displayName;
       targetUser = users[existingIndex];
@@ -432,6 +461,7 @@ class AuthManager {
         status: 'ACTIVE',
         expiresAt,
         maxBots: parseInt(maxBots) || 5,
+        maxStorageMB: storageQuotaMB,
         createdAt: new Date().toISOString(),
         note: note || '經由管理員手動授權'
       };
@@ -444,9 +474,38 @@ class AuthManager {
 
     return {
       success: true,
-      message: `已成功授權帳號 ${cleanEmail}`,
+      message: `已成功授權帳號 ${cleanEmail} (派發空間: ${storageQuotaMB} MB)`,
       generatedPassword: pwd,
-      expiresAt
+      expiresAt,
+      maxStorageMB: storageQuotaMB
+    };
+  }
+
+  // 管理員調配特定使用者的空間配額與機器人限額
+  updateUserQuota(email, { maxStorageMB, maxBots }) {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const users = [...this.getUsers()];
+    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) return { success: false, message: '查無此帳號' };
+
+    if (maxStorageMB !== undefined) {
+      user.maxStorageMB = Math.max(10, parseInt(maxStorageMB) || 100);
+    }
+    if (maxBots !== undefined) {
+      user.maxBots = Math.max(1, parseInt(maxBots) || 5);
+    }
+
+    this.saveUsers(users);
+    this.syncUserToCloud(user);
+
+    return {
+      success: true,
+      message: `已成功調配 ${cleanEmail} 的空間配額為 ${user.maxStorageMB} MB，機器人上限為 ${user.maxBots} 台！`,
+      user: {
+        email: user.email,
+        maxStorageMB: user.maxStorageMB,
+        maxBots: user.maxBots
+      }
     };
   }
 
@@ -536,6 +595,7 @@ class AuthManager {
         remainingText,
         plainPasswordHint: u.plainPasswordHint,
         maxBots: u.maxBots || 5,
+        maxStorageMB: u.maxStorageMB || (u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ? 10240 : 100),
         note: u.note || '',
         createdAt: u.createdAt,
         isSuperAdmin: u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()

@@ -21,10 +21,14 @@ CREATE TABLE IF NOT EXISTS public.rpjg_bot_users (
     status TEXT DEFAULT 'ACTIVE',
     expires_at TIMESTAMPTZ,
     max_bots INTEGER DEFAULT 5,
+    max_storage_mb INTEGER DEFAULT 100,
     note TEXT DEFAULT '',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- 自動升級現有資料表結構（若欄位不存在則新增）
+ALTER TABLE public.rpjg_bot_users ADD COLUMN IF NOT EXISTS max_storage_mb INTEGER DEFAULT 100;
 
 -- 為 Email 建立查詢索引
 CREATE INDEX IF NOT EXISTS idx_rpjg_bot_users_email 

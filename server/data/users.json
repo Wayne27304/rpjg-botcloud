@@ -10,7 +10,8 @@
     "expiresAt": null,
     "maxBots": 50,
     "createdAt": "2026-09-09T13:00:49.149Z",
-    "note": "系統最高管理者 (R.P.J.G 總管)"
+    "note": "系統最高管理者 (R.P.J.G 總管)",
+    "maxStorageMB": 10240
   },
   {
     "id": "usr-dino1010804",
@@ -23,6 +24,7 @@
     "expiresAt": null,
     "maxBots": 5,
     "createdAt": "2026-09-09T14:10:00.000Z",
-    "note": "買家客戶 (永久授權)"
+    "note": "買家客戶 (永久授權)",
+    "maxStorageMB": 250
   }
 ]

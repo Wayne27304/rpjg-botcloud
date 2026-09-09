@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, FolderArchive, FileCode, Check, AlertCircle, FilePlus, Sparkles } from 'lucide-react';
+import { X, Upload, FolderArchive, FileCode, Check, AlertCircle, FilePlus, Sparkles, HardDrive } from 'lucide-react';
 
-export default function UploadBotModal({ isOpen, onClose, onCreated }) {
+export default function UploadBotModal({ isOpen, onClose, onCreated, currentUser }) {
   const [botName, setBotName] = useState('');
   const [botType, setBotType] = useState('nodejs'); // 'nodejs' | 'python'
   const [mainFile, setMainFile] = useState('index.js');
@@ -124,6 +124,22 @@ export default function UploadBotModal({ isOpen, onClose, onCreated }) {
           <div className="mx-6 mt-4 p-3 rounded-xl bg-red-950/40 border border-red-800/60 flex items-center space-x-2 text-xs text-red-300">
             <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
             <span>{errorMessage}</span>
+          </div>
+        )}
+
+        {currentUser && (
+          <div className="mx-6 mt-4 p-3 rounded-xl bg-[#141517] border border-[#2b2d31] flex items-center justify-between text-xs">
+            <div className="flex items-center space-x-2 text-gray-300">
+              <HardDrive className="w-4 h-4 text-cyan-400 shrink-0" />
+              <span>
+                雲端空間配額：
+                <strong className="text-white font-mono">{currentUser.usedStorageMB || 0} MB</strong>
+                <span className="text-gray-500 font-mono"> / {currentUser.maxStorageMB || 100} MB</span>
+              </span>
+            </div>
+            <span className="text-emerald-400 font-mono font-bold text-[11px]">
+              剩餘 {currentUser.remainingStorageMB ?? (currentUser.maxStorageMB || 100)} MB
+            </span>
           </div>
         )}
 

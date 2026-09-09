@@ -256,6 +256,187 @@ class BotManager {
     return zip.toBuffer();
   }
 
+  // 格式化位元組為易讀單位 (B, KB, MB, GB)
+  formatBytes(bytes) {
+    if (!bytes || bytes <= 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  // 遞迴計算目錄或檔案大小
+  getDirSize(dirPath) {
+    let total = 0;
+    if (!fs.existsSync(dirPath)) return 0;
+    try {
+      const stat = fs.statSync(dirPath);
+      if (!stat.isDirectory()) return stat.size;
+      const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+          total += this.getDirSize(fullPath);
+        } else {
+          try {
+            total += fs.statSync(fullPath).size;
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    return total;
+  }
+
+  // 計算指定使用者所有機器人實際佔用的儲存空間
+  getUserStorageUsage(userEmail) {
+    if (!fs.existsSync(BOTS_DIR)) return { totalBytes: 0, totalMB: 0, formatted: '0 B', botCount: 0, bots: [] };
+    const cleanEmail = (userEmail || '').trim().toLowerCase();
+    let totalBytes = 0;
+    const userBots = [];
+
+    const entries = fs.readdirSync(BOTS_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const botId = entry.name;
+      const botDir = path.join(BOTS_DIR, botId);
+      const metaPath = path.join(botDir, 'metadata.json');
+      if (fs.existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+          const botOwner = (meta.ownerEmail || SUPER_ADMIN_EMAIL).toLowerCase();
+          if (botOwner === cleanEmail) {
+            const botSize = this.getDirSize(botDir);
+            totalBytes += botSize;
+            userBots.push({
+              id: botId,
+              name: meta.name,
+              sizeBytes: botSize,
+              sizeFormatted: this.formatBytes(botSize)
+            });
+          }
+        } catch (_) {}
+      }
+    }
+
+    return {
+      totalBytes,
+      totalMB: +(totalBytes / (1024 * 1024)).toFixed(2),
+      formatted: this.formatBytes(totalBytes),
+      botCount: userBots.length,
+      bots: userBots
+    };
+  }
+
+  // 檢查使用者是否超出空間配額 (超額時拒絕寫入/上傳)
+  checkUserStorageQuota(userEmail, incomingBytes = 0) {
+    const cleanEmail = (userEmail || '').trim().toLowerCase();
+    if (cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      return { allowed: true }; // 最高總管不受配額限制
+    }
+
+    const user = authManager.getUser(cleanEmail);
+    const maxStorageMB = user?.maxStorageMB || 100;
+    const maxBytes = maxStorageMB * 1024 * 1024;
+    const usage = this.getUserStorageUsage(cleanEmail);
+
+    if (usage.totalBytes + incomingBytes > maxBytes) {
+      const currentMB = (usage.totalBytes / (1024 * 1024)).toFixed(2);
+      const incomingMB = (incomingBytes / (1024 * 1024)).toFixed(2);
+      return {
+        allowed: false,
+        message: `已超出管理員派發的雲端儲存空間配額！目前已使用 ${currentMB} MB，即將寫入 ${incomingMB} MB，超過上限 ${maxStorageMB} MB。請聯絡管理員 (ryanryan311311@gmail.com) 擴充空間。`,
+        currentMB,
+        maxStorageMB
+      };
+    }
+    return { allowed: true, currentMB: usage.totalMB, maxStorageMB };
+  }
+
+  // 取得主機整體儲存空間與配額總覽 (提供管理員後台)
+  getSystemStorageOverview() {
+    let diskTotalBytes = 0;
+    let diskFreeBytes = 0;
+    let diskUsedBytes = 0;
+
+    try {
+      if (fs.statfsSync) {
+        const stats = fs.statfsSync(BOTS_DIR);
+        const bsize = stats.bsize || 4096;
+        diskTotalBytes = (stats.blocks || 0) * bsize;
+        diskFreeBytes = (stats.bavail || stats.bfree || 0) * bsize;
+        diskUsedBytes = Math.max(0, diskTotalBytes - diskFreeBytes);
+      }
+    } catch (e) {
+      console.error('statfsSync 讀取失敗:', e.message);
+    }
+
+    // 機器人目錄總空間與清單
+    let totalBotsBytes = 0;
+    let totalBotCount = 0;
+    const botUsageList = [];
+
+    if (fs.existsSync(BOTS_DIR)) {
+      const entries = fs.readdirSync(BOTS_DIR, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        const botDir = path.join(BOTS_DIR, entry.name);
+        const bSize = this.getDirSize(botDir);
+        totalBotsBytes += bSize;
+        totalBotCount++;
+
+        let meta = { name: entry.name, ownerEmail: '未知' };
+        try {
+          const metaFile = path.join(botDir, 'metadata.json');
+          if (fs.existsSync(metaFile)) {
+            meta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+          }
+        } catch (_) {}
+
+        botUsageList.push({
+          id: entry.name,
+          name: meta.name || entry.name,
+          ownerEmail: meta.ownerEmail || SUPER_ADMIN_EMAIL,
+          sizeBytes: bSize,
+          sizeFormatted: this.formatBytes(bSize)
+        });
+      }
+    }
+
+    // 計算已派發配額總量
+    const allUsers = authManager.getUsers();
+    let totalAllocatedQuotaMB = 0;
+    for (const u of allUsers) {
+      totalAllocatedQuotaMB += (u.maxStorageMB || (u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ? 10240 : 100));
+    }
+
+    const botsUsedMB = +(totalBotsBytes / (1024 * 1024)).toFixed(2);
+
+    return {
+      disk: {
+        totalBytes: diskTotalBytes,
+        freeBytes: diskFreeBytes,
+        usedBytes: diskUsedBytes,
+        totalFormatted: this.formatBytes(diskTotalBytes),
+        freeFormatted: this.formatBytes(diskFreeBytes),
+        usedFormatted: this.formatBytes(diskUsedBytes),
+        usedPercent: diskTotalBytes > 0 ? +((diskUsedBytes / diskTotalBytes) * 100).toFixed(1) : 0
+      },
+      bots: {
+        totalBytes: totalBotsBytes,
+        totalMB: botsUsedMB,
+        formatted: this.formatBytes(totalBotsBytes),
+        totalBotCount,
+        list: botUsageList
+      },
+      quota: {
+        totalAllocatedMB: totalAllocatedQuotaMB,
+        totalUsedMB: botsUsedMB,
+        remainingFreeQuotaMB: Math.max(0, +(totalAllocatedQuotaMB - botsUsedMB).toFixed(2)),
+        usagePercent: totalAllocatedQuotaMB > 0 ? +((botsUsedMB / totalAllocatedQuotaMB) * 100).toFixed(1) : 0
+      }
+    };
+  }
+
   setWsClients(clients) {
     this.wsClients = clients;
   }
@@ -333,6 +514,16 @@ class BotManager {
 
   // 由使用者自訂上傳檔案或 ZIP 建立機器人
   createBotFromUpload({ name, type, description, mainFile, ownerEmail, zipFile, uploadedFiles, initialCode }) {
+    const zipSize = (zipFile && zipFile.buffer) ? zipFile.buffer.length : (zipFile?.size || 0);
+    const filesSize = (uploadedFiles || []).reduce((sum, f) => sum + (f.buffer?.length || f.size || 0), 0);
+    const incomingBytes = zipSize + filesSize;
+
+    // 檢查使用者儲存空間配額
+    const quotaCheck = this.checkUserStorageQuota(ownerEmail, incomingBytes);
+    if (!quotaCheck.allowed) {
+      throw new Error(quotaCheck.message);
+    }
+
     const botId = 'bot-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
     const botDir = path.join(BOTS_DIR, botId);
     fs.mkdirSync(botDir, { recursive: true });
@@ -959,8 +1150,22 @@ class BotManager {
   }
 
   saveFile(botId, filePath, content) {
+    const bot = this.getBot(botId);
+    const ownerEmail = bot?.ownerEmail || SUPER_ADMIN_EMAIL;
     const safePath = path.normalize(filePath).replace(/^(\.\.[\/\\])+/, '');
     const fullPath = path.join(BOTS_DIR, botId, safePath);
+
+    // 計算增加的位元組數進行配額驗證
+    const oldSize = fs.existsSync(fullPath) ? fs.statSync(fullPath).size : 0;
+    const newSize = Buffer.byteLength(content, 'utf8');
+    const diff = Math.max(0, newSize - oldSize);
+    if (diff > 0) {
+      const quotaCheck = this.checkUserStorageQuota(ownerEmail, diff);
+      if (!quotaCheck.allowed) {
+        throw new Error(quotaCheck.message);
+      }
+    }
+
     fs.mkdirSync(path.dirname(fullPath), { recursive: true });
     fs.writeFileSync(fullPath, content, 'utf8');
     this.appendLog(botId, `\x1b[36m[RPJG-EDITOR]\x1b[0m 檔案已更新儲存: ${safePath}`);
@@ -968,8 +1173,17 @@ class BotManager {
     return true;
   }
 
-  // 接收使用者上傳檔案並儲存至該機器人目錄
+  // 接收使用者上傳檔案並儲存至該機器人目錄 (進行空間配額驗證)
   uploadSingleFile(botId, originalName, buffer) {
+    const bot = this.getBot(botId);
+    const ownerEmail = bot?.ownerEmail || SUPER_ADMIN_EMAIL;
+    const incomingBytes = buffer ? buffer.length : 0;
+
+    const quotaCheck = this.checkUserStorageQuota(ownerEmail, incomingBytes);
+    if (!quotaCheck.allowed) {
+      throw new Error(quotaCheck.message);
+    }
+
     const safeName = path.basename(originalName);
     const fullPath = path.join(BOTS_DIR, botId, safeName);
     fs.writeFileSync(fullPath, buffer);
@@ -997,6 +1211,16 @@ class BotManager {
 
       const activeCount = this.processes.size;
       const totalBots = this.listBots(null, true).length;
+      let diskFreeFormatted = '充足';
+      try {
+        if (fs.statfsSync) {
+          const stats = fs.statfsSync(BOTS_DIR);
+          const bsize = stats.bsize || 4096;
+          const freeBytes = (stats.bavail || stats.bfree || 0) * bsize;
+          diskFreeFormatted = this.formatBytes(freeBytes);
+        }
+      } catch (_) {}
+
       this.broadcast({
         type: 'telemetry',
         data: {
@@ -1004,6 +1228,7 @@ class BotManager {
           totalBots,
           clusterLoad: (activeCount * 14.5 + Math.random() * 5).toFixed(1),
           totalRamUsed: Array.from(this.stats.values()).reduce((sum, s) => sum + (s.memory || 0), 120),
+          diskFreeFormatted,
           ping: (14 + Math.random() * 6).toFixed(0),
           timestamp: Date.now()
         }

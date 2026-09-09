@@ -448,6 +448,39 @@ export default function App() {
               <HardDrive className="w-3.5 h-3.5 text-cyan-400" />
               <span>已分配記憶體：<strong className="text-white font-mono">{telemetry.totalRamUsed} MB</strong></span>
             </div>
+
+            {/* 雲端儲存空間與配額即時指標 */}
+            {currentUser && (
+              <div className="flex items-center space-x-2 border-l border-gray-700/80 pl-4 shrink-0">
+                <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
+                {isSuperAdmin ? (
+                  <span>
+                    主機剩餘空間：<strong className="text-emerald-400 font-mono">{telemetry.diskFreeFormatted || '充足'}</strong>
+                  </span>
+                ) : (
+                  <div className="flex items-center space-x-2">
+                    <span>
+                      我的雲端空間：
+                      <strong className="text-white font-mono">{currentUser.usedStorageMB || 0} MB</strong>
+                      <span className="text-gray-500 font-mono"> / {currentUser.maxStorageMB || 100} MB</span>
+                      <span className="text-emerald-400 font-mono ml-1.5">(剩餘 {currentUser.remainingStorageMB ?? (currentUser.maxStorageMB || 100)} MB)</span>
+                    </span>
+                    <div className="w-14 bg-gray-800 h-1.5 rounded-full overflow-hidden border border-gray-700">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          (currentUser.storageUsagePercent || 0) > 90
+                            ? 'bg-red-500'
+                            : (currentUser.storageUsagePercent || 0) > 70
+                            ? 'bg-amber-400'
+                            : 'bg-cyan-400'
+                        }`}
+                        style={{ width: `${Math.min(100, Math.max(5, currentUser.storageUsagePercent || 0))}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <div className="hidden sm:flex items-center space-x-2 text-[11px] text-gray-500">
             <Shield className="w-3.5 h-3.5 text-emerald-400" />
@@ -940,6 +973,7 @@ export default function App() {
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
         onCreated={handleBotCreated}
+        currentUser={currentUser}
       />
 
       <AboutModal

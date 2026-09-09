@@ -127,8 +127,11 @@ app.post('/api/auth/login', (req, res) => {
   res.json(result);
 });
 
-// 取得當前使用者身分
+// 取得當前使用者身分 (包含空間配額與使用量)
 app.get('/api/auth/me', requireAuth, (req, res) => {
+  const usage = botManager.getUserStorageUsage(req.user.email);
+  const maxStorageMB = req.user.maxStorageMB || (req.user.role === 'SUPER_ADMIN' ? 10240 : 100);
+
   res.json({
     success: true,
     user: {
@@ -137,20 +140,38 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
       displayName: req.user.displayName,
       expiresAt: req.user.expiresAt,
       maxBots: req.user.maxBots || 5,
+      maxStorageMB,
+      usedStorageMB: usage.totalMB,
+      remainingStorageMB: Math.max(0, +(maxStorageMB - usage.totalMB).toFixed(2)),
+      storageUsagePercent: maxStorageMB > 0 ? +((usage.totalMB / maxStorageMB) * 100).toFixed(1) : 0,
       isSuperAdmin: req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
     }
   });
 });
 
-// 管理員：取得所有授權的使用者清單
+// 管理員：取得所有授權的使用者清單 (豐富空間用量指標)
 app.get('/api/auth/users', requireAuth, requireSuperAdmin, (req, res) => {
   const users = authManager.listUsers();
-  res.json({ success: true, users });
+  const enriched = users.map(u => {
+    const usage = botManager.getUserStorageUsage(u.email);
+    const maxStorageMB = u.maxStorageMB || (u.isSuperAdmin ? 10240 : 100);
+    return {
+      ...u,
+      maxStorageMB,
+      usedStorageBytes: usage.totalBytes,
+      usedStorageMB: usage.totalMB,
+      usedStorageFormatted: usage.formatted,
+      remainingStorageMB: Math.max(0, +(maxStorageMB - usage.totalMB).toFixed(2)),
+      storageUsagePercent: maxStorageMB > 0 ? +((usage.totalMB / maxStorageMB) * 100).toFixed(1) : 0,
+      botCount: usage.botCount
+    };
+  });
+  res.json({ success: true, users: enriched });
 });
 
-// 管理員：授權新 Gmail 與期限
+// 管理員：授權新 Gmail 與期限 (支援派發儲存空間)
 app.post('/api/auth/authorize', requireAuth, requireSuperAdmin, (req, res) => {
-  const { email, password, durationType, customDays, maxBots, note, displayName } = req.body;
+  const { email, password, durationType, customDays, maxBots, maxStorageMB, note, displayName } = req.body;
   if (!email) return res.status(400).json({ success: false, message: '缺少 Email' });
 
   const result = authManager.authorizeUser({
@@ -159,10 +180,28 @@ app.post('/api/auth/authorize', requireAuth, requireSuperAdmin, (req, res) => {
     durationType,
     customDays,
     maxBots,
+    maxStorageMB,
     note,
     displayName
   });
   res.json(result);
+});
+
+// 管理員：調配特定使用者的空間配額與機器人數量
+app.post('/api/auth/users/:email/quota', requireAuth, requireSuperAdmin, (req, res) => {
+  const { maxStorageMB, maxBots } = req.body;
+  const result = authManager.updateUserQuota(req.params.email, { maxStorageMB, maxBots });
+  res.json(result);
+});
+
+// 管理員：取得主機空間剩餘量與全域派發總覽
+app.get('/api/admin/storage-overview', requireAuth, requireSuperAdmin, (req, res) => {
+  try {
+    const overview = botManager.getSystemStorageOverview();
+    res.json({ success: true, ...overview });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // 管理員：延長授權天數
