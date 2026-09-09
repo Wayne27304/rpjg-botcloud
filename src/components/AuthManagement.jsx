@@ -1,0 +1,519 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Crown,
+  UserPlus,
+  Users,
+  Shield,
+  Clock,
+  Key,
+  Copy,
+  Check,
+  RefreshCw,
+  Trash2,
+  Lock,
+  Unlock,
+  AlertTriangle,
+  Calendar,
+  Sparkles
+} from 'lucide-react';
+
+export default function AuthManagement({ currentUser }) {
+  const [users, setUsers] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [copiedIndex, setCopiedIndex] = useState(null);
+
+  // 表單資料
+  const [email, setEmail] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [durationType, setDurationType] = useState('30d'); // 'permanent' | '30d' | '7d' | '1d' | 'custom'
+  const [customDays, setCustomDays] = useState(14);
+  const [maxBots, setMaxBots] = useState(5);
+  const [note, setNote] = useState('');
+  const [formStatus, setFormStatus] = useState(null);
+
+  const fetchUsers = async () => {
+    setIsLoading(true);
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch('/api/auth/users', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && data.users) {
+        setUsers(data.users);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const handleGeneratePassword = () => {
+    const randomPwd = 'rpjg_' + Math.random().toString(36).substring(2, 8);
+    setPassword(randomPwd);
+  };
+
+  const handleAuthorize = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch('/api/auth/authorize', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          email: email.trim(),
+          displayName: displayName.trim(),
+          password: password.trim() || undefined,
+          durationType,
+          customDays,
+          maxBots,
+          note: note.trim()
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFormStatus({ type: 'success', message: `已成功授權 ${email}！密碼為：${data.generatedPassword}` });
+        setEmail('');
+        setDisplayName('');
+        setPassword('');
+        setNote('');
+        fetchUsers();
+        setTimeout(() => setFormStatus(null), 6000);
+      } else {
+        setFormStatus({ type: 'error', message: data.message });
+      }
+    } catch (e) {
+      setFormStatus({ type: 'error', message: '操作失敗' });
+    }
+  };
+
+  const handleExtend = async (targetEmail, days) => {
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch(`/api/auth/users/${encodeURIComponent(targetEmail)}/extend`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ days })
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchUsers();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleStatus = async (targetEmail) => {
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch(`/api/auth/users/${encodeURIComponent(targetEmail)}/status`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchUsers();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleDelete = async (targetEmail) => {
+    if (!confirm(`確定要移除 ${targetEmail} 的授權資格嗎？此使用者將無法再登入。`)) return;
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch(`/api/auth/users/${encodeURIComponent(targetEmail)}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchUsers();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const copyToClipboard = (text, idx) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(idx);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  const activeCount = users.filter(u => u.status === 'ACTIVE' && !u.isExpired).length;
+  const expiredCount = users.filter(u => u.isExpired).length;
+
+  return (
+    <div className="space-y-6">
+      {/* 頂部管理員卡片 */}
+      <div className="bg-gradient-to-r from-indigo-950/60 via-[#1e1f22] to-purple-950/60 p-6 rounded-2xl border border-indigo-500/30 shadow-xl relative overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+          <div className="flex items-center space-x-3.5">
+            <div className="p-3.5 rounded-2xl bg-gradient-to-tr from-amber-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/20">
+              <Crown className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h2 className="text-xl font-extrabold text-white tracking-wide">
+                  最高主管授權管理中心 (License Admin)
+                </h2>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  SUPER_ADMIN
+                </span>
+              </div>
+              <p className="text-xs text-gray-300 mt-0.5">
+                登入者：<strong className="text-white font-mono">{currentUser?.email}</strong> | 單位：<span className="text-indigo-300">R.P.J.G 開發部門</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-4">
+            <div className="text-right">
+              <div className="text-xs text-gray-400">有效授權中帳號</div>
+              <div className="text-xl font-bold text-emerald-400 font-mono">{activeCount} 人</div>
+            </div>
+            <div className="h-8 w-px bg-gray-700"></div>
+            <div className="text-right">
+              <div className="text-xs text-gray-400">已過期帳號</div>
+              <div className="text-xl font-bold text-red-400 font-mono">{expiredCount} 人</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 授權新增表單 */}
+      <div className="bg-[#1e1f22] p-6 rounded-2xl border border-[#2b2d31] shadow-xl">
+        <div className="flex items-center justify-between pb-4 border-b border-[#2b2d31]">
+          <div className="flex items-center space-x-2">
+            <UserPlus className="w-5 h-5 text-discord-blurple" />
+            <h3 className="text-sm font-bold text-white">簽發授權給新的 GMAIL 使用者</h3>
+          </div>
+          <span className="text-xs text-gray-400">填寫後系統將立即開通該帳號登入權限</span>
+        </div>
+
+        {formStatus && (
+          <div className={`mt-4 p-3 rounded-xl text-xs flex items-center space-x-2 ${
+            formStatus.type === 'success'
+              ? 'bg-emerald-950/50 border border-emerald-800/60 text-emerald-300'
+              : 'bg-red-950/50 border border-red-800/60 text-red-300'
+          }`}>
+            <Sparkles className="w-4 h-4 shrink-0" />
+            <span>{formStatus.message}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleAuthorize} className="mt-5 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                使用者 Gmail / Email <span className="text-red-400">*</span>
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="client@gmail.com"
+                className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] focus:outline-none focus:border-discord-blurple font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                顯示名稱 / 暱稱
+              </label>
+              <input
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="例如: 小明 / VIP 客戶"
+                className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] focus:outline-none focus:border-discord-blurple"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-medium text-gray-300">
+                  登入密碼 (留空自動生成)
+                </label>
+                <button
+                  type="button"
+                  onClick={handleGeneratePassword}
+                  className="text-[11px] text-discord-blurple hover:underline"
+                >
+                  隨機生成
+                </button>
+              </div>
+              <input
+                type="text"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="自訂密碼或留空生成"
+                className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] focus:outline-none focus:border-discord-blurple font-mono"
+              />
+            </div>
+          </div>
+
+          {/* 授權期限按鈕組 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-300 mb-2">
+              選擇授權天數 / 期限 (Duration) <span className="text-red-400">*</span>
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+              {[
+                { id: '1d', label: '1 天 (24小時體驗)', badge: '體驗' },
+                { id: '7d', label: '7 天 (一週)', badge: '短期' },
+                { id: '30d', label: '30 天 (一個月)', badge: '熱門' },
+                { id: 'permanent', label: '🌟 永久授權', badge: 'VIP' },
+                { id: 'custom', label: '自訂天數', badge: '彈性' }
+              ].map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  onClick={() => setDurationType(item.id)}
+                  className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center transition ${
+                    durationType === item.id
+                      ? 'bg-discord-blurple text-white border-discord-blurple shadow-md'
+                      : 'bg-[#141517] text-gray-300 border-[#35373c] hover:border-gray-500'
+                  }`}
+                >
+                  <span>{item.label}</span>
+                  <span className={`text-[10px] mt-0.5 px-1.5 py-0.2 rounded ${
+                    durationType === item.id ? 'bg-white/20 text-white' : 'bg-gray-800 text-gray-400'
+                  }`}>
+                    {item.badge}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {durationType === 'custom' && (
+              <div className="mt-3 flex items-center space-x-2">
+                <span className="text-xs text-gray-400">請輸入欲授權天數：</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="3650"
+                  value={customDays}
+                  onChange={(e) => setCustomDays(e.target.value)}
+                  className="w-24 bg-[#141517] text-xs text-white p-2 rounded-lg border border-[#35373c] font-mono text-center"
+                />
+                <span className="text-xs text-gray-400">天</span>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                允許託管機器人數量限額
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="20"
+                value={maxBots}
+                onChange={(e) => setMaxBots(e.target.value)}
+                className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c]"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-300 mb-1">
+                備註說明 (客戶姓名、社群名稱等)
+              </label>
+              <input
+                type="text"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="例如: Discord 伺服器技術長"
+                className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c]"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              className="flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-bold shadow-lg shadow-discord-blurple/30 transition"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>確認簽發授權</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* 授權列表 */}
+      <div className="bg-[#1e1f22] rounded-2xl border border-[#2b2d31] overflow-hidden shadow-xl">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2b2d31]">
+          <div className="flex items-center space-x-2">
+            <Users className="w-5 h-5 text-indigo-400" />
+            <h3 className="text-sm font-bold text-white">已授權使用者名冊</h3>
+          </div>
+          <button
+            onClick={fetchUsers}
+            title="重新整理"
+            className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-gray-300">
+            <thead className="bg-[#141517] text-gray-400 uppercase text-[11px] border-b border-[#2b2d31]">
+              <tr>
+                <th className="px-6 py-3">Gmail / 使用者</th>
+                <th className="px-4 py-3">角色與備註</th>
+                <th className="px-4 py-3">密碼提示</th>
+                <th className="px-4 py-3">剩餘時間 / 期限</th>
+                <th className="px-4 py-3">狀態</th>
+                <th className="px-6 py-3 text-right">管理操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#2b2d31]">
+              {users.map((u, idx) => {
+                const isSuper = u.isSuperAdmin;
+                const isExp = u.isExpired;
+                const isSuspended = u.status === 'SUSPENDED';
+
+                return (
+                  <tr key={u.id} className="hover:bg-[#232428] transition">
+                    <td className="px-6 py-4">
+                      <div className="flex items-center space-x-2.5">
+                        <div className={`p-2 rounded-xl ${isSuper ? 'bg-amber-500/20 text-amber-300' : 'bg-gray-800 text-gray-300'}`}>
+                          {isSuper ? <Crown className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                        </div>
+                        <div>
+                          <div className="font-bold text-white font-mono flex items-center space-x-1.5">
+                            <span>{u.email}</span>
+                            {isSuper && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                總管
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-gray-400">{u.displayName}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <div className="text-xs text-gray-200">{u.note || '無備註'}</div>
+                      <div className="text-[10px] text-gray-500">上限: {u.maxBots} 台機器人</div>
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <div className="flex items-center space-x-1.5 font-mono text-gray-200">
+                        <code className="bg-[#141517] px-2 py-0.5 rounded border border-gray-700 text-[11px]">
+                          {u.plainPasswordHint || '******'}
+                        </code>
+                        {u.plainPasswordHint && (
+                          <button
+                            onClick={() => copyToClipboard(u.plainPasswordHint, idx)}
+                            className="p-1 text-gray-400 hover:text-white"
+                            title="複製密碼"
+                          >
+                            {copiedIndex === idx ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-4">
+                      <div className={`font-semibold font-mono ${isExp ? 'text-red-400' : (u.expiresAt ? 'text-indigo-300' : 'text-emerald-400')}`}>
+                        {u.remainingText}
+                      </div>
+                      {u.expiresAt && (
+                        <div className="text-[10px] text-gray-500">
+                          到期日: {new Date(u.expiresAt).toLocaleDateString('zh-TW')}
+                        </div>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-4">
+                      {isSuspended ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-800">
+                          已凍結
+                        </span>
+                      ) : isExp ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-950 text-red-400 border border-red-800">
+                          已過期
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
+                          正常有效
+                        </span>
+                      )}
+                    </td>
+
+                    <td className="px-6 py-4 text-right">
+                      {!isSuper ? (
+                        <div className="flex items-center justify-end space-x-1.5">
+                          {/* 展延按鈕 */}
+                          <div className="relative inline-block group">
+                            <button
+                              onClick={() => handleExtend(u.email, 30)}
+                              className="px-2.5 py-1 rounded-lg bg-indigo-950 text-indigo-300 border border-indigo-800 hover:bg-indigo-900 text-[11px] font-medium transition"
+                            >
+                              +30天
+                            </button>
+                          </div>
+
+                          <button
+                            onClick={() => handleExtend(u.email, 'permanent')}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-950 text-emerald-300 border border-emerald-800 hover:bg-emerald-900 text-[11px] font-medium transition"
+                            title="設為永久"
+                          >
+                            設永久
+                          </button>
+
+                          {/* 凍結切換 */}
+                          <button
+                            onClick={() => handleToggleStatus(u.email)}
+                            className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition"
+                            title={isSuspended ? '解除凍結' : '暫時凍結'}
+                          >
+                            {isSuspended ? <Unlock className="w-3.5 h-3.5 text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-amber-400" />}
+                          </button>
+
+                          {/* 刪除 */}
+                          <button
+                            onClick={() => handleDelete(u.email)}
+                            className="p-1.5 rounded-lg bg-gray-800 hover:bg-red-900/50 text-gray-400 hover:text-red-400 transition"
+                            title="移除此授權"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-gray-500 italic">最高總管</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,30 @@
+{
+  "name": "rpjg-dcbot-cloud",
+  "version": "1.0.0",
+  "description": "R.P.J.G 開發部門 - Discord Bot 雲端線上託管平台",
+  "main": "server/index.js",
+  "type": "module",
+  "scripts": {
+    "dev:server": "node server/index.js",
+    "dev": "vite",
+    "build": "vite build",
+    "render-build": "npm install --include=dev && vite build",
+    "start": "node server/index.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "adm-zip": "^0.6.0",
+    "autoprefixer": "^10.4.20",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "lucide-react": "^0.475.0",
+    "multer": "^2.3.0",
+    "postcss": "^8.5.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.17",
+    "vite": "^6.1.0",
+    "ws": "^8.18.0"
+  }
+}

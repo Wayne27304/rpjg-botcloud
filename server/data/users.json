@@ -1,0 +1,15 @@
+[
+  {
+    "id": "admin-01",
+    "email": "ryanryan311311@gmail.com",
+    "passwordHash": "490f79d426ca9c6d660b9e2ea06495a34f560d7147ca9cecc185aedc558bcbdc",
+    "plainPasswordHint": "Hh126702249",
+    "role": "SUPER_ADMIN",
+    "displayName": "Ryan (最高主管)",
+    "status": "ACTIVE",
+    "expiresAt": null,
+    "maxBots": 50,
+    "createdAt": "2026-09-09T13:00:49.149Z",
+    "note": "系統最高管理者 (R.P.J.G 總管)"
+  }
+]

@@ -1,0 +1,7 @@
+node_modules
+.gemini
+*.log
+.DS_Store
+dist
+server/bots/*
+!server/bots/.gitkeep

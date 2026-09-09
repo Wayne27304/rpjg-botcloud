@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  rpjg-botcloud:
+    build: .
+    container_name: rpjg-dcbot-cloud
+    restart: always
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - NODE_ENV=production
+      - JWT_SECRET=rpjg_cloud_247_secret_key
+    volumes:
+      - ./server/bots:/app/server/bots
+      - ./server/data:/app/server/data
