@@ -34,8 +34,6 @@ export default function AuthManagement({ currentUser }) {
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [copiedBackup, setCopiedBackup] = useState(false);
-  const [copiedLinkIndex, setCopiedLinkIndex] = useState(null);
-  const [copiedBannerLink, setCopiedBannerLink] = useState(false);
   const [showGuide, setShowGuide] = useState(false);
   const [storageStatus, setStorageStatus] = useState(null);
   const [botsBackupCount, setBotsBackupCount] = useState(0);
@@ -52,14 +50,6 @@ export default function AuthManagement({ currentUser }) {
   const [isSavingQuota, setIsSavingQuota] = useState(false);
 
   const fileInputRef = useRef(null);
-
-  const copyDirectLoginLink = (userEmail, userPwd, idx) => {
-    const origin = window.location.origin;
-    const directUrl = `${origin}/?email=${encodeURIComponent(userEmail)}&pwd=${encodeURIComponent(userPwd || '')}`;
-    navigator.clipboard.writeText(directUrl);
-    setCopiedLinkIndex(idx);
-    setTimeout(() => setCopiedLinkIndex(null), 2500);
-  };
 
   const fetchBotsBackup = () => {
     const token = localStorage.getItem('rpjg_auth_token');
@@ -204,11 +194,9 @@ export default function AuthManagement({ currentUser }) {
       });
       const data = await res.json();
       if (data.success) {
-        const directUrl = `${window.location.origin}/?email=${encodeURIComponent(email.trim())}&pwd=${encodeURIComponent(data.generatedPassword)}`;
         setFormStatus({
           type: 'success',
-          message: `已成功授權 ${email}！密碼為：${data.generatedPassword} (派發空間: ${data.maxStorageMB || maxStorageMB} MB)`,
-          directUrl
+          message: `已成功授權 ${email}！密碼為：${data.generatedPassword} (派發空間: ${data.maxStorageMB || maxStorageMB} MB)。請提供帳號與密碼供買家手動登入。`
         });
         setEmail('');
         setDisplayName('');
@@ -670,7 +658,7 @@ export default function AuthManagement({ currentUser }) {
         </div>
 
         {formStatus && (
-          <div className={`mt-4 p-3.5 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+          <div className={`mt-4 p-3.5 rounded-xl text-xs flex items-center justify-between gap-3 ${
             formStatus.type === 'success'
               ? 'bg-emerald-950/50 border border-emerald-800/60 text-emerald-300'
               : 'bg-red-950/50 border border-red-800/60 text-red-300'
@@ -679,20 +667,6 @@ export default function AuthManagement({ currentUser }) {
               <Sparkles className="w-4 h-4 shrink-0" />
               <span>{formStatus.message}</span>
             </div>
-            {formStatus.directUrl && (
-              <button
-                type="button"
-                onClick={() => {
-                  navigator.clipboard.writeText(formStatus.directUrl);
-                  setCopiedBannerLink(true);
-                  setTimeout(() => setCopiedBannerLink(false), 2500);
-                }}
-                className="shrink-0 flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shadow"
-              >
-                {copiedBannerLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedBannerLink ? '已複製直登網址！' : '複製買家一鍵直登網址'}</span>
-              </button>
-            )}
           </div>
         )}
 
@@ -1013,16 +987,6 @@ export default function AuthManagement({ currentUser }) {
                           >
                             <HardDrive className="w-3 h-3 text-cyan-400 shrink-0" />
                             <span>調配空間</span>
-                          </button>
-
-                          {/* 一鍵直登連結 */}
-                          <button
-                            onClick={() => copyDirectLoginLink(u.email, u.plainPasswordHint, idx)}
-                            className="px-2 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 border border-indigo-500/40 hover:bg-indigo-600 hover:text-white text-[11px] font-medium transition flex items-center space-x-1 whitespace-nowrap shrink-0"
-                            title="複製此買家專屬的一鍵直登連結，買家點開即自動登入！"
-                          >
-                            {copiedLinkIndex === idx ? <Check className="w-3 h-3 text-emerald-400 shrink-0" /> : <Sparkles className="w-3 h-3 text-indigo-400 shrink-0" />}
-                            <span>{copiedLinkIndex === idx ? '已複製！' : '直登連結'}</span>
                           </button>
 
                           {/* 展延按鈕 */}
