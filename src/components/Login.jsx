@@ -173,7 +173,7 @@ export default function Login({ onLoginSuccess }) {
         </form>
 
         <div className="mt-4 p-2.5 rounded-xl bg-[#141517] border border-gray-800 text-[11px] text-gray-400 leading-relaxed text-center">
-          💡 <strong>買家提示</strong>：如尚未取得授權帳號或忘記密碼，請直接聯絡管理員 <span className="text-discord-blurple font-mono">ryanryan311311@gmail.com</span> 開通或索取<strong>一鍵直登連結</strong>！
+          💡 <strong>買家提示</strong>：請使用管理員簽發之帳號與密碼進行登入。如尚未開通或忘記密碼，請聯絡 <span className="text-discord-blurple font-mono">ryanryan311311@gmail.com</span>。
         </div>
       </div>
 
