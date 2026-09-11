@@ -93,6 +93,11 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
     e.preventDefault();
     if (!email.trim()) return;
 
+    if (currentUser?.isResellerDisabled) {
+      setFormStatus({ type: 'error', message: '您的經銷代理商權限已被最高主管停用，無法派發客戶。如有疑問請聯絡主管。' });
+      return;
+    }
+
     setIsSubmitting(true);
     setFormStatus(null);
     const token = localStorage.getItem('rpjg_auth_token');
@@ -176,6 +181,19 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
 
   return (
     <div className="max-w-7xl mx-auto px-4 lg:px-8 py-8 space-y-8 animate-in fade-in duration-300">
+      {/* 經銷商權限停用警示 */}
+      {currentUser?.isResellerDisabled && (
+        <div className="p-4 rounded-2xl bg-red-950/80 border border-red-800 text-red-200 text-xs flex items-center space-x-3 shadow-lg">
+          <AlertTriangle className="w-6 h-6 text-red-400 shrink-0" />
+          <div>
+            <div className="font-bold text-sm text-red-300">經銷代理商權限已被最高主管停用</div>
+            <div className="text-[11px] text-gray-300 mt-0.5">
+              您目前的代理派發權限已被管理員暫時凍結，無法派發新客戶或調配額度。現有客戶與機器人運行不受影響。如有疑問請聯絡最高主管。
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 標題與操作區 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 p-6 rounded-2xl border border-amber-500/30">
         <div className="flex items-center space-x-4">

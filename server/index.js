@@ -106,14 +106,19 @@ const requireSuperAdmin = (req, res, next) => {
 };
 
 const requireResellerOrAdmin = (req, res, next) => {
-  if (
-    req.user &&
-    (req.user.role === 'RESELLER' ||
-     req.user.role === 'SUPER_ADMIN' ||
-     req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase())
-  ) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: '未登入' });
+  }
+  const isSuper = req.user.role === 'SUPER_ADMIN' || req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+  if (isSuper) return next();
+
+  if (req.user.role === 'RESELLER') {
+    if (req.user.isResellerDisabled) {
+      return res.status(403).json({ success: false, message: '您的經銷代理商權限已被最高主管停用，無法操作代理後台。' });
+    }
     return next();
   }
+
   return res.status(403).json({ success: false, message: '權限不足：僅代理經銷商或最高管理員可操作' });
 };
 
@@ -392,6 +397,19 @@ app.post('/api/auth/users/:email/reset-key', requireAuth, requireSuperAdmin, (re
 // 管理員：凍結 / 解除凍結
 app.post('/api/auth/users/:email/status', requireAuth, requireSuperAdmin, (req, res) => {
   const result = authManager.toggleUserStatus(req.params.email);
+  res.json(result);
+});
+
+// 管理員：停用 / 恢復經銷代理商權限
+app.post('/api/auth/users/:email/toggle-reseller', requireAuth, requireSuperAdmin, (req, res) => {
+  const result = authManager.toggleResellerStatus(req.params.email, req.user);
+  res.json(result);
+});
+
+// 管理員：變更帳號身分 (USER / RESELLER 之間自由轉換)
+app.post('/api/auth/users/:email/role', requireAuth, requireSuperAdmin, (req, res) => {
+  const { role } = req.body;
+  const result = authManager.changeUserRole(req.params.email, role, req.user);
   res.json(result);
 });
 

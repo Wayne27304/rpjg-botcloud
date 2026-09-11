@@ -143,22 +143,19 @@ class AuthManager {
   }
 
   // 伺服器啟動時從 Supabase 雲端資料庫非同步拉取 (第一重保護)
+  // 伺服器啟動時從雲端永久保存庫拉取 (支援 Supabase 與 Google Apps Script 雙重雲端防護)
   async initCloud() {
-    if (!this.supabase || !this.isCloudActive) return;
+    let cloudSynced = false;
 
-    try {
-      console.log('[CLOUD] 正在同步 Supabase 雲端資料庫授權名冊...');
-      const { data, error } = await this.supabase
-        .from('rpjg_bot_users')
-        .select('*');
+    // 1. 第一重：若有 Supabase，優先自 Supabase 同步
+    if (this.supabase && this.isCloudActive) {
+      try {
+        console.log('[CLOUD] 正在同步 Supabase 雲端資料庫授權名冊...');
+        const { data, error } = await this.supabase
+          .from('rpjg_bot_users')
+          .select('*');
 
-      if (error) {
-        console.warn(`[CLOUD] ⚠️ 讀取 Supabase 資料表失敗: ${error.message} (如為初次使用，請在 Supabase SQL Editor 執行 supabase_bot_schema.sql)`);
-        return;
-      }
-
-      if (data && Array.isArray(data)) {
-        if (data.length > 0) {
+        if (!error && data && Array.isArray(data) && data.length > 0) {
           console.log(`[CLOUD] 🟢 成功自 Supabase 雲端載入 ${data.length} 筆授權資料！`);
           
           // 將 Supabase 資料庫欄位對齊至本機記憶體
@@ -169,6 +166,7 @@ class AuthManager {
               passwordHash: row.password_hash,
               plainPasswordHint: row.plain_password_hint,
               role: row.role || 'USER',
+              isResellerDisabled: Boolean(row.is_reseller_disabled),
               displayName: row.display_name || row.email.split('@')[0],
               status: row.status || 'ACTIVE',
               expiresAt: row.expires_at || null,
@@ -186,19 +184,74 @@ class AuthManager {
             }
           }
 
-          // 重新寫入本機檔案
           this.saveLocalUsers(this.usersCache);
-        } else {
-          // 雲端資料庫為空，將現有本機使用者自動同步至雲端
-          console.log(`[CLOUD] Supabase 資料表目前為空，正在將現有本機 ${this.usersCache.length} 筆資料同步至雲端...`);
-          for (const user of this.usersCache) {
-            await this.syncUserToCloud(user);
+          cloudSynced = true;
+        }
+      } catch (e) {
+        console.error('[CLOUD] Supabase 初始化例外:', e.message);
+      }
+    }
+
+    // 2. 第二重：若無 Supabase 或為空，自 Google Apps Script 雲端金鑰庫自動還原 (零配置、永不遺失)
+    if (!cloudSynced) {
+      const gasUsers = await this.fetchUsersFromGasRelay();
+      if (gasUsers && Array.isArray(gasUsers) && gasUsers.length > 0) {
+        console.log(`[CLOUD-VAULT] 🟢 成功自 Google 雲端金鑰庫還原 ${gasUsers.length} 筆派發金鑰與帳號！`);
+        for (const bUser of gasUsers) {
+          if (!bUser || !bUser.email) continue;
+          const idx = this.usersCache.findIndex(u => u.email.toLowerCase() === bUser.email.toLowerCase());
+          if (idx >= 0) {
+            this.usersCache[idx] = { ...this.usersCache[idx], ...bUser };
+          } else {
+            this.usersCache.push(bUser);
           }
         }
+        this.saveLocalUsers(this.usersCache);
       }
-    } catch (e) {
-      console.error('[CLOUD] 雲端資料庫初始化例外:', e.message);
     }
+  }
+
+  // 非同步備份至 Google Apps Script 雲端 PropertiesService
+  async syncUsersToGasRelay(users) {
+    const relayUrl = mailerService.getRelayUrl();
+    if (!relayUrl) return;
+
+    try {
+      const payload = {
+        token: 'RPJG_GMAIL_RELAY_TOKEN_2026',
+        action: 'save_backup',
+        users
+      };
+      await fetch(relayUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        redirect: 'follow'
+      });
+      console.log(`[CLOUD-VAULT] ☁️ 已成功將 ${users.length} 筆授權資料與密鑰同步持久化至 Google 雲端！`);
+    } catch (err) {
+      // 靜默捕捉或印出警告
+    }
+  }
+
+  // 從 Google Apps Script 雲端拉取歷史名冊
+  async fetchUsersFromGasRelay() {
+    const relayUrl = mailerService.getRelayUrl();
+    if (!relayUrl) return null;
+
+    try {
+      const url = new URL(relayUrl);
+      url.searchParams.set('action', 'get_backup');
+      const res = await fetch(url.toString(), { redirect: 'follow' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return data;
+      }
+    } catch (err) {
+      // 忽略
+    }
+    return null;
   }
 
   // 取得使用者快取清單
@@ -219,9 +272,10 @@ class AuthManager {
     }
   }
 
-  // 儲存所有使用者（同步本機 + 非同步同步雲端）
+  // 儲存所有使用者（同步本機 + 非同步雙雲端永久保存）
   saveUsers(users) {
     this.saveLocalUsers(users);
+    this.syncUsersToGasRelay(users);
   }
 
   // 單一使用者同步至 Supabase (具備欄位自動降級防護)
@@ -235,6 +289,7 @@ class AuthManager {
         password_hash: user.passwordHash,
         plain_password_hint: user.plainPasswordHint || '',
         role: user.role || 'USER',
+        is_reseller_disabled: Boolean(user.isResellerDisabled),
         display_name: user.displayName || user.email.split('@')[0],
         status: user.status || 'ACTIVE',
         expires_at: user.expiresAt || null,
@@ -249,9 +304,10 @@ class AuthManager {
         .from('rpjg_bot_users')
         .upsert(payload, { onConflict: 'email' });
 
-      // 若 Supabase 還沒新增 max_storage_mb 欄位，自動移除欄位降級寫入
-      if (error && error.message && error.message.includes('max_storage_mb')) {
+      // 若 Supabase 還沒新增欄位，自動移除欄位降級寫入
+      if (error && error.message && (error.message.includes('max_storage_mb') || error.message.includes('is_reseller_disabled'))) {
         delete payload.max_storage_mb;
+        delete payload.is_reseller_disabled;
         const retry = await this.supabase
           .from('rpjg_bot_users')
           .upsert(payload, { onConflict: 'email' });
@@ -397,6 +453,7 @@ class AuthManager {
       user: {
         email: user.email,
         role: user.role,
+        isResellerDisabled: Boolean(user.isResellerDisabled),
         displayName: user.displayName || user.email.split('@')[0],
         expiresAt: user.expiresAt,
         maxBots: user.maxBots || 5,
@@ -789,6 +846,82 @@ class AuthManager {
     return { success: true, status: user.status };
   }
 
+  // 管理員：停用或啟用經銷商代理權限
+  toggleResellerStatus(email, actorUser = null) {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      return { success: false, message: '最高管理員身分不可變更' };
+    }
+    const users = [...this.getUsers()];
+    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) return { success: false, message: '查無此帳號' };
+
+    if (user.role !== 'RESELLER') {
+      return { success: false, message: '該帳號並非經銷代理商身分' };
+    }
+
+    user.isResellerDisabled = !user.isResellerDisabled;
+    user.updatedAt = new Date().toISOString();
+
+    this.saveUsers(users);
+    this.syncUserToCloud(user);
+
+    auditLogger.log(
+      actorUser?.email || SUPER_ADMIN_EMAIL,
+      user.isResellerDisabled ? 'DISABLE_RESELLER' : 'ENABLE_RESELLER',
+      cleanEmail,
+      { isResellerDisabled: user.isResellerDisabled }
+    );
+
+    return {
+      success: true,
+      isResellerDisabled: user.isResellerDisabled,
+      message: user.isResellerDisabled
+        ? `已成功停用 ${cleanEmail} 的經銷代理商權限 (已凍結派發配額功能)！`
+        : `已成功恢復 ${cleanEmail} 的經銷代理商權限！`
+    };
+  }
+
+  // 管理員：變更使用者角色 (可在 USER 與 RESELLER 之間自由切換)
+  changeUserRole(email, newRole, actorUser = null) {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    if (cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      return { success: false, message: '最高管理員身分不可變更' };
+    }
+    if (!['USER', 'RESELLER'].includes(newRole)) {
+      return { success: false, message: '無效的角色類型' };
+    }
+
+    const users = [...this.getUsers()];
+    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) return { success: false, message: '查無此帳號' };
+
+    user.role = newRole;
+    if (newRole === 'RESELLER') {
+      user.isResellerDisabled = false;
+      if (!user.resellerQuotaMB) user.resellerQuotaMB = 5000;
+      if (!user.resellerMaxBots) user.resellerMaxBots = 20;
+      if (!user.resellerMaxUsers) user.resellerMaxUsers = 10;
+    }
+    user.updatedAt = new Date().toISOString();
+
+    this.saveUsers(users);
+    this.syncUserToCloud(user);
+
+    auditLogger.log(
+      actorUser?.email || SUPER_ADMIN_EMAIL,
+      'CHANGE_ROLE',
+      cleanEmail,
+      { role: newRole }
+    );
+
+    return {
+      success: true,
+      role: user.role,
+      message: `已成功將 ${cleanEmail} 身分調整為 ${newRole === 'RESELLER' ? '經銷代理商' : '普通買家客戶'}！`
+    };
+  }
+
   // 刪除使用者
   deleteUser(email, actorUser = null) {
     const cleanEmail = (email || '').trim().toLowerCase();
@@ -845,6 +978,7 @@ class AuthManager {
         id: u.id,
         email: u.email,
         role: u.role || 'USER',
+        isResellerDisabled: Boolean(u.isResellerDisabled),
         parentResellerEmail: u.parentResellerEmail || null,
         resellerQuotaMB: u.resellerQuotaMB || 0,
         resellerMaxBots: u.resellerMaxBots || 0,

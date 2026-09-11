@@ -380,6 +380,57 @@ export default function AuthManagement({ currentUser, bots = [] }) {
     }
   };
 
+  // 停用或啟用經銷商權限
+  const handleToggleReseller = async (targetEmail) => {
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch(`/api/auth/users/${encodeURIComponent(targetEmail)}/toggle-reseller`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchUsers();
+        fetchStorageStatus();
+      } else {
+        alert(data.message || '操作失敗');
+      }
+    } catch (err) {
+      alert('操作異常: ' + err.message);
+    }
+  };
+
+  // 切換角色 (USER / RESELLER)
+  const handleChangeRole = async (targetEmail, newRole) => {
+    const roleName = newRole === 'RESELLER' ? '經銷代理商' : '普通買家客戶';
+    if (!window.confirm(`確定要將 ${targetEmail} 的身分變更為「${roleName}」嗎？`)) return;
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch(`/api/auth/users/${encodeURIComponent(targetEmail)}/role`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ role: newRole })
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(data.message);
+        fetchUsers();
+        fetchStorageStatus();
+      } else {
+        alert(data.message || '操作失敗');
+      }
+    } catch (err) {
+      alert('變更角色異常: ' + err.message);
+    }
+  };
+
   // 匯出備份 JSON 檔案
   const handleExportBackup = async () => {
     const token = localStorage.getItem('rpjg_auth_token');
@@ -1110,9 +1161,13 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                                 </span>
                               )}
                               {isReseller && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold flex items-center space-x-0.5">
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold flex items-center space-x-0.5 border ${
+                                  u.isResellerDisabled
+                                    ? 'bg-red-950/80 text-red-300 border-red-800'
+                                    : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                                }`}>
                                   <Award className="w-2.5 h-2.5 mr-0.5" />
-                                  <span>代理商</span>
+                                  <span>{u.isResellerDisabled ? '代理商 (已停用)' : '經銷代理商'}</span>
                                 </span>
                               )}
                             </div>
@@ -1128,9 +1183,13 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                               最高主管
                             </span>
                           ) : isReseller ? (
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-0.5">
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border flex items-center space-x-0.5 ${
+                              u.isResellerDisabled
+                                ? 'bg-red-950/80 text-red-300 border-red-800'
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                            }`}>
                               <Award className="w-2.5 h-2.5 mr-0.5" />
-                              <span>經銷代理商</span>
+                              <span>{u.isResellerDisabled ? '經銷代理 (已停用)' : '經銷代理商'}</span>
                             </span>
                           ) : (
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40">
@@ -1239,6 +1298,29 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                     <td className="px-6 py-4 text-right">
                       {!isSuper ? (
                         <div className="flex items-center justify-end space-x-1.5">
+                          {/* 經銷商專屬：停用/恢復經銷權限 */}
+                          {isReseller ? (
+                            <button
+                              onClick={() => handleToggleReseller(u.email)}
+                              className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center space-x-1 shrink-0 whitespace-nowrap border ${
+                                u.isResellerDisabled
+                                  ? 'bg-emerald-950 text-emerald-300 border-emerald-800 hover:bg-emerald-900 shadow-sm'
+                                  : 'bg-red-950/80 text-red-300 border-red-800/80 hover:bg-red-900 shadow-sm'
+                              }`}
+                              title={u.isResellerDisabled ? '恢復該用戶的經銷商權限 (允許派發新配額與客戶)' : '停用該經銷商代理權限 (保留帳號但凍結派發功能)'}
+                            >
+                              <span>{u.isResellerDisabled ? '恢復經銷權' : '停用經銷權'}</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleChangeRole(u.email, 'RESELLER')}
+                              className="px-2 py-1 rounded-lg bg-amber-950/40 text-amber-300/80 border border-amber-800/50 hover:bg-amber-900/60 text-[11px] font-medium transition shrink-0 whitespace-nowrap"
+                              title="將此普通買家升級為經銷代理商"
+                            >
+                              設為代理
+                            </button>
+                          )}
+
                           {/* 調配空間 */}
                           <button
                             onClick={() => handleOpenQuotaModal(u)}

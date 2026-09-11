@@ -21,6 +21,14 @@ const GAS_CODE = `/**
 
 // 1. 處理瀏覽器直接打開網址 (GET 請求) - 解決「找不到以下指示函式：doGet」
 function doGet(e) {
+  var action = (e && e.parameter && e.parameter.action) ? e.parameter.action : '';
+  
+  // 讀取雲端名冊與金鑰備份 (支援跨重啟永續還原)
+  if (action === 'get_backup') {
+    var raw = PropertiesService.getScriptProperties().getProperty('RPJG_USERS_STORE');
+    return ContentService.createTextOutput(raw || '[]').setMimeType(ContentService.MimeType.JSON);
+  }
+
   var testParam = (e && e.parameter && e.parameter.test) ? e.parameter.test : '';
   
   // 若網址後方帶有 ?test=1 或 ?test=your_email@gmail.com 即可在瀏覽器直接觸發測試信
@@ -45,13 +53,13 @@ function doGet(e) {
   return ContentService.createTextOutput(JSON.stringify({
     success: true,
     status: 'ONLINE',
-    engine: 'RPJG BotCloud Gmail Relay Engine',
-    message: '🎉 服務連線正常！轉發引擎已在線就緒。請將此網址複製並貼回 RPJG BotCloud 後台【Gmail 郵件設定】即可自動發信！',
+    engine: 'RPJG BotCloud Gmail & Cloud Vault Engine',
+    message: '🎉 服務連線正常！轉發引擎與雲端金鑰持久化庫已在線就緒。請將此網址複製並貼回 RPJG BotCloud 後台【Gmail 郵件設定】即可自動發信與永久存儲！',
     tip: '若要直接在瀏覽器測試發信，可在網址後方加上 ?test=1'
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
-// 2. 處理伺服器端發信指令 (POST 請求)
+// 2. 處理伺服器端發信與雲端存儲指令 (POST 請求)
 function doPost(e) {
   try {
     if (!e || !e.postData || !e.postData.contents) {
@@ -71,6 +79,24 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
+    // 指令 A: 永久保存使用者名冊與金鑰至 Google 雲端庫
+    if (data.action === 'save_backup' && Array.isArray(data.users)) {
+      PropertiesService.getScriptProperties().setProperty('RPJG_USERS_STORE', JSON.stringify(data.users));
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        message: '雲端名冊與金鑰已永久保存至 Google Script Properties！',
+        count: data.users.length,
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 指令 B: 從 Google 雲端庫讀取歷史名冊與金鑰
+    if (data.action === 'get_backup') {
+      var rawUsers = PropertiesService.getScriptProperties().getProperty('RPJG_USERS_STORE');
+      return ContentService.createTextOutput(rawUsers || '[]').setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 指令 C: Gmail 郵件發送
     var recipient = data.to;
     if (!recipient) {
       return ContentService.createTextOutput(JSON.stringify({
