@@ -162,27 +162,29 @@ app.post('/api/auth/login', (req, res) => {
 
 // 取得當前使用者身分 (包含空間配額與使用量)
 app.get('/api/auth/me', requireAuth, (req, res) => {
+  const isSuperAdmin = req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+  const role = isSuperAdmin ? 'SUPER_ADMIN' : (req.user.role || 'USER');
   const usage = botManager.getUserStorageUsage(req.user.email);
-  const maxStorageMB = req.user.maxStorageMB || (req.user.role === 'SUPER_ADMIN' ? 10240 : 100);
+  const maxStorageMB = isSuperAdmin ? 10240 : (req.user.maxStorageMB || 100);
 
   res.json({
     success: true,
     user: {
       email: req.user.email,
-      role: req.user.role || 'USER',
+      role,
       displayName: req.user.displayName,
-      expiresAt: req.user.expiresAt,
-      maxBots: req.user.maxBots || 5,
+      expiresAt: isSuperAdmin ? null : req.user.expiresAt,
+      maxBots: isSuperAdmin ? 50 : (req.user.maxBots || 5),
       maxStorageMB,
       usedStorageMB: usage.totalMB,
       remainingStorageMB: Math.max(0, +(maxStorageMB - usage.totalMB).toFixed(2)),
       storageUsagePercent: maxStorageMB > 0 ? +((usage.totalMB / maxStorageMB) * 100).toFixed(1) : 0,
-      isSuperAdmin: req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase(),
+      isSuperAdmin,
       plainPasswordHint: req.user.plainPasswordHint || '',
-      resellerQuotaMB: req.user.resellerQuotaMB || 0,
-      resellerMaxBots: req.user.resellerMaxBots || 0,
-      resellerMaxUsers: req.user.resellerMaxUsers || 0,
-      parentResellerEmail: req.user.parentResellerEmail || null
+      resellerQuotaMB: isSuperAdmin ? 0 : (req.user.resellerQuotaMB || 0),
+      resellerMaxBots: isSuperAdmin ? 0 : (req.user.resellerMaxBots || 0),
+      resellerMaxUsers: isSuperAdmin ? 0 : (req.user.resellerMaxUsers || 0),
+      parentResellerEmail: null
     }
   });
 });

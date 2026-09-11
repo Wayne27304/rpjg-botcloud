@@ -1123,8 +1123,8 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                 className="bg-transparent text-xs text-gray-300 focus:outline-none"
               >
                 <option value="ALL" className="bg-[#1e1f22]">全部帳號 ({users.length})</option>
-                <option value="RESELLER" className="bg-[#1e1f22]">僅經銷代理商 ({users.filter(u => u.role === 'RESELLER').length})</option>
-                <option value="USER" className="bg-[#1e1f22]">僅普通客戶 ({users.filter(u => u.role === 'USER' || !u.role).length})</option>
+                <option value="RESELLER" className="bg-[#1e1f22]">僅經銷代理商 ({users.filter(u => !u.isSuperAdmin && u.email?.toLowerCase() !== 'ryanryan311311@gmail.com' && u.role === 'RESELLER').length})</option>
+                <option value="USER" className="bg-[#1e1f22]">僅普通客戶 ({users.filter(u => !u.isSuperAdmin && u.email?.toLowerCase() !== 'ryanryan311311@gmail.com' && u.role !== 'RESELLER').length})</option>
               </select>
             </div>
 
@@ -1153,10 +1153,15 @@ export default function AuthManagement({ currentUser, bots = [] }) {
             </thead>
             <tbody className="divide-y divide-[#2b2d31]">
               {users
-                .filter(u => userRoleFilter === 'ALL' ? true : (userRoleFilter === 'RESELLER' ? u.role === 'RESELLER' : u.role !== 'RESELLER'))
+                .filter(u => {
+                  const isSuper = u.isSuperAdmin || u.email?.toLowerCase() === 'ryanryan311311@gmail.com';
+                  if (userRoleFilter === 'ALL') return true;
+                  if (userRoleFilter === 'RESELLER') return !isSuper && u.role === 'RESELLER';
+                  return isSuper || u.role !== 'RESELLER';
+                })
                 .map((u, idx) => {
-                  const isSuper = u.isSuperAdmin;
-                  const isReseller = u.role === 'RESELLER';
+                  const isSuper = u.isSuperAdmin || u.email?.toLowerCase() === 'ryanryan311311@gmail.com';
+                  const isReseller = !isSuper && u.role === 'RESELLER';
                   const isExp = u.isExpired;
                   const isSuspended = u.status === 'SUSPENDED';
 

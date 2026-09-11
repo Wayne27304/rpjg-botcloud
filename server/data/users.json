@@ -11,6 +11,7 @@
     "maxBots": 50,
     "createdAt": "2026-09-09T13:00:49.149Z",
     "note": "系統最高管理者 (R.P.J.G 總管)",
-    "maxStorageMB": 10240
+    "maxStorageMB": 10240,
+    "isResellerDisabled": false
   }
 ]

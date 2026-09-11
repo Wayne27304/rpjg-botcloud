@@ -86,7 +86,13 @@ export default function App() {
       .then(res => res.json())
       .then(data => {
         if (data.success && data.user) {
+          const isSuper = data.user.email?.toLowerCase() === 'ryanryan311311@gmail.com' || data.user.role === 'SUPER_ADMIN' || data.user.isSuperAdmin;
+          if (isSuper) {
+            data.user.role = 'SUPER_ADMIN';
+            data.user.isSuperAdmin = true;
+          }
           setCurrentUser(data.user);
+          localStorage.setItem('rpjg_auth_user', JSON.stringify(data.user));
         } else {
           localStorage.removeItem('rpjg_auth_token');
           localStorage.removeItem('rpjg_auth_user');
@@ -332,7 +338,7 @@ export default function App() {
     return <Login onLoginSuccess={(user) => setCurrentUser(user)} />;
   }
 
-  const isSuperAdmin = currentUser?.isSuperAdmin;
+  const isSuperAdmin = currentUser?.isSuperAdmin || currentUser?.email?.toLowerCase() === 'ryanryan311311@gmail.com' || currentUser?.role === 'SUPER_ADMIN';
   const selectedBot = bots.find(b => b.id === selectedBotId) || bots[0];
   const filteredBots = bots.filter(b => b.name.toLowerCase().includes(searchTerm.toLowerCase()));
   const onlineCount = bots.filter(b => b.status === 'ONLINE').length;
@@ -404,8 +410,8 @@ export default function App() {
               </button>
             )}
 
-            {/* 經銷代理商專屬：代理後台切換按鈕 */}
-            {currentUser?.role === 'RESELLER' && (
+            {/* 經銷代理商專屬：代理後台切換按鈕 (最高主管絕不顯示此按鈕) */}
+            {currentUser?.role === 'RESELLER' && !isSuperAdmin && (
               <button
                 onClick={() => setCurrentView(currentView === 'reseller_portal' ? 'dashboard' : 'reseller_portal')}
                 className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
@@ -562,7 +568,7 @@ export default function App() {
             </div>
             <AuthManagement currentUser={currentUser} bots={bots} />
           </div>
-        ) : currentView === 'reseller_portal' && (currentUser?.role === 'RESELLER' || isSuperAdmin) ? (
+        ) : currentView === 'reseller_portal' && currentUser?.role === 'RESELLER' && !isSuperAdmin ? (
           /* 經銷代理商專屬：代理後台畫面 */
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -1153,7 +1159,7 @@ export default function App() {
                   </button>
                 )}
 
-                {currentUser?.role === 'RESELLER' && (
+                {currentUser?.role === 'RESELLER' && !isSuperAdmin && (
                   <button
                     onClick={() => { setCurrentView('reseller_portal'); setIsMobileMenuOpen(false); }}
                     className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${

@@ -158,10 +158,10 @@ class AuthManager {
       }
     }
 
-    // 3. 確保最高主管帳號必然存在
-    const adminExists = users.some(u => u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
-    if (!adminExists) {
-      users.unshift({
+    // 3. 確保最高主管帳號必然存在且身分永遠為 SUPER_ADMIN (絕不可為經銷商)
+    let adminUser = users.find(u => u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
+    if (!adminUser) {
+      adminUser = {
         id: 'admin-01',
         email: SUPER_ADMIN_EMAIL,
         passwordHash: this.hashPassword('Hh126702249'),
@@ -174,7 +174,18 @@ class AuthManager {
         maxStorageMB: 10240, // 10GB
         createdAt: new Date().toISOString(),
         note: '系統最高管理者 (R.P.J.G 總管)'
-      });
+      };
+      users.unshift(adminUser);
+    } else {
+      adminUser.role = 'SUPER_ADMIN';
+      adminUser.isResellerDisabled = false;
+      delete adminUser.parentResellerEmail;
+      delete adminUser.resellerQuotaMB;
+      delete adminUser.resellerMaxBots;
+      delete adminUser.resellerMaxUsers;
+      adminUser.maxStorageMB = 10240;
+      adminUser.maxBots = 50;
+      adminUser.expiresAt = null;
     }
 
     // 確保所有使用者都有 maxStorageMB 欄位 (預設 100MB，總管 10240MB)
@@ -282,6 +293,23 @@ class AuthManager {
         this.saveLocalUsers(this.usersCache);
       }
     }
+
+    // 關鍵保護：無論雲端歷史數據如何，無條件強制最高主管為 SUPER_ADMIN 並校正雲端
+    const adminUser = this.usersCache.find(u => u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
+    if (adminUser) {
+      adminUser.role = 'SUPER_ADMIN';
+      adminUser.isResellerDisabled = false;
+      delete adminUser.parentResellerEmail;
+      delete adminUser.resellerQuotaMB;
+      delete adminUser.resellerMaxBots;
+      delete adminUser.resellerMaxUsers;
+      adminUser.maxStorageMB = 10240;
+      adminUser.maxBots = 50;
+      adminUser.expiresAt = null;
+      this.saveLocalUsers(this.usersCache);
+      this.syncUserToCloud(adminUser);
+      this.syncUsersToGasRelay(this.usersCache);
+    }
   }
 
   // 非同步備份至 Google Apps Script 雲端 PropertiesService
@@ -331,6 +359,15 @@ class AuthManager {
   getUsers() {
     if (!this.usersCache || this.usersCache.length === 0) {
       this.initUsers();
+    }
+    const admin = this.usersCache.find(u => u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
+    if (admin && admin.role !== 'SUPER_ADMIN') {
+      admin.role = 'SUPER_ADMIN';
+      admin.isResellerDisabled = false;
+      delete admin.parentResellerEmail;
+      delete admin.resellerQuotaMB;
+      delete admin.resellerMaxBots;
+      delete admin.resellerMaxUsers;
     }
     return this.usersCache;
   }
@@ -423,9 +460,10 @@ class AuthManager {
 
   // 簽發安全 Token
   generateToken(user) {
+    const isSuper = user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
     const payload = {
       email: user.email,
-      role: user.role,
+      role: isSuper ? 'SUPER_ADMIN' : user.role,
       issuedAt: Date.now()
     };
     const payloadBase64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
@@ -448,6 +486,11 @@ class AuthManager {
       const users = this.getUsers();
       const user = users.find(u => u.email.toLowerCase() === payload.email.toLowerCase());
       if (!user) return null;
+
+      if (user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()) {
+        user.role = 'SUPER_ADMIN';
+        user.isSuperAdmin = true;
+      }
 
       if (user.status !== 'ACTIVE') return null;
 
@@ -506,8 +549,15 @@ class AuthManager {
       return { success: false, message: '您的帳號已被管理員暫時凍結，請聯絡 ryanryan311311@gmail.com' };
     }
 
+    const isSuper = user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+    if (isSuper) {
+      user.role = 'SUPER_ADMIN';
+      user.isSuperAdmin = true;
+      user.isResellerDisabled = false;
+    }
+
     // 檢查授權期限
-    if (user.expiresAt) {
+    if (!isSuper && user.expiresAt) {
       const expireTime = new Date(user.expiresAt).getTime();
       if (Date.now() > expireTime) {
         const formattedDate = new Date(user.expiresAt).toLocaleString('zh-TW');
@@ -525,12 +575,12 @@ class AuthManager {
       token,
       user: {
         email: user.email,
-        role: user.role,
-        isResellerDisabled: Boolean(user.isResellerDisabled),
+        role: isSuper ? 'SUPER_ADMIN' : user.role,
+        isResellerDisabled: isSuper ? false : Boolean(user.isResellerDisabled),
         displayName: user.displayName || user.email.split('@')[0],
-        expiresAt: user.expiresAt,
-        maxBots: user.maxBots || 5,
-        isSuperAdmin: user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+        expiresAt: isSuper ? null : user.expiresAt,
+        maxBots: isSuper ? 50 : (user.maxBots || 5),
+        isSuperAdmin: isSuper
       }
     };
   }
@@ -562,6 +612,12 @@ class AuthManager {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail.includes('@')) {
       return { success: false, message: '請提供有效的 Gmail / Email 地址' };
+    }
+    if (cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
+      return { 
+        success: false, 
+        message: '安全保護：最高總管帳號（' + SUPER_ADMIN_EMAIL + '）受系統核心保護，身分必然為 SUPER_ADMIN，不可變更為經銷商或其他身分！' 
+      };
     }
 
     const users = [...this.getUsers()];
@@ -1074,26 +1130,27 @@ class AuthManager {
         }
       }
 
+      const isSuper = u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
       return {
         id: u.id,
         email: u.email,
-        role: u.role || 'USER',
-        isResellerDisabled: Boolean(u.isResellerDisabled),
-        parentResellerEmail: u.parentResellerEmail || null,
-        resellerQuotaMB: u.resellerQuotaMB || 0,
-        resellerMaxBots: u.resellerMaxBots || 0,
-        resellerMaxUsers: u.resellerMaxUsers || 0,
+        role: isSuper ? 'SUPER_ADMIN' : (u.role || 'USER'),
+        isResellerDisabled: isSuper ? false : Boolean(u.isResellerDisabled),
+        parentResellerEmail: isSuper ? null : (u.parentResellerEmail || null),
+        resellerQuotaMB: isSuper ? 0 : (u.resellerQuotaMB || 0),
+        resellerMaxBots: isSuper ? 0 : (u.resellerMaxBots || 0),
+        resellerMaxUsers: isSuper ? 0 : (u.resellerMaxUsers || 0),
         displayName: u.displayName,
         status: u.status,
-        expiresAt: u.expiresAt,
-        isExpired,
-        remainingText,
+        expiresAt: isSuper ? null : u.expiresAt,
+        isExpired: isSuper ? false : isExpired,
+        remainingText: isSuper ? '永久有效' : remainingText,
         plainPasswordHint: u.plainPasswordHint,
-        maxBots: u.maxBots || 5,
-        maxStorageMB: u.maxStorageMB || (u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() ? 10240 : 100),
+        maxBots: isSuper ? 50 : (u.maxBots || 5),
+        maxStorageMB: isSuper ? 10240 : (u.maxStorageMB || 100),
         note: u.note || '',
         createdAt: u.createdAt,
-        isSuperAdmin: u.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+        isSuperAdmin: isSuper
       };
     });
   }
