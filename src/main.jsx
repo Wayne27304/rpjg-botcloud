@@ -11,3 +11,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </ErrorBoundary>
   </React.StrictMode>,
 );
+
+// 註冊 PWA Service Worker (支援 Chrome / Edge / iOS Safari 離線與原生 APP 體驗)
+if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('PWA Service Worker registration error:', err);
+    });
+  });
+}
+

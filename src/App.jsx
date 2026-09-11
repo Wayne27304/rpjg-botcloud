@@ -33,7 +33,8 @@ import {
   MoreVertical,
   X,
   Download,
-  Image as ImageIcon
+  Smartphone,
+  Share2
 } from 'lucide-react';
 
 import Login from './components/Login';
@@ -55,7 +56,49 @@ export default function App() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [isGlobalAuditOpen, setIsGlobalAuditOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
+  const [isIosInstallModalOpen, setIsIosInstallModalOpen] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [isIos, setIsIos] = useState(false);
+
+  // 監聽 PWA 安裝事件與獨立運行模式
+  useEffect(() => {
+    const inStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    setIsStandalone(inStandalone);
+
+    const ua = window.navigator.userAgent.toLowerCase();
+    const isIosDevice = /iphone|ipad|ipod/.test(ua) && !window.MSStream;
+    setIsIos(isIosDevice);
+
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', () => {
+      setDeferredPrompt(null);
+      setIsStandalone(true);
+    });
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setDeferredPrompt(null);
+      }
+    } else if (isIos && !isStandalone) {
+      setIsIosInstallModalOpen(true);
+    } else {
+      setIsIosInstallModalOpen(true);
+    }
+  };
 
   const [bots, setBots] = useState([]);
   const [selectedBotId, setSelectedBotId] = useState(null);
@@ -341,18 +384,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-discord-darkest flex flex-col relative selection:bg-discord-blurple selection:text-white overflow-x-hidden">
-      {/* 電腦與手機分開之專屬高畫質動態桌布 (Responsive Wallpapers) */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-700 md:hidden opacity-30"
-        style={{ backgroundImage: "url('/wallpaper-mobile.jpg')" }}
-      />
-      <div
-        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-700 hidden md:block opacity-30"
-        style={{ backgroundImage: "url('/wallpaper-desktop.jpg')" }}
-      />
-      {/* 科技深色半透明遮罩，保證所有後台、表格、終端日誌文字清爽清晰 */}
-      <div className="fixed inset-0 pointer-events-none z-0 bg-[#0e0f11]/75 backdrop-blur-[1px]" />
-
       {/* 頂部導航欄 (Top Navigation Bar) */}
       <header className="sticky top-0 z-40 bg-[#1e1f22]/90 backdrop-blur-md border-b border-[#2b2d31] px-4 lg:px-8 py-3 relative z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
@@ -406,16 +437,17 @@ export default function App() {
               <span className="text-emerald-400 font-mono text-[11px]">{telemetry.ping}ms</span>
             </div>
 
-            {/* 下載專屬桌布按鈕 */}
-            <a
-              href="/wallpaper-desktop.jpg"
-              download="RPJG-Desktop-Wallpaper.jpg"
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#2b2d31] hover:bg-gray-700 text-cyan-300 border border-cyan-500/30 transition"
-              title="下載電腦版 16:9 4K 官方專屬桌布"
-            >
-              <ImageIcon className="w-3.5 h-3.5" />
-              <span>下載桌布</span>
-            </a>
+            {/* 安裝 PWA 原生 APP 按鈕 */}
+            {!isStandalone && (
+              <button
+                onClick={handleInstallClick}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-discord-blurple/20 to-indigo-600/20 hover:from-discord-blurple/30 hover:to-indigo-600/30 text-indigo-300 border border-indigo-500/40 transition shadow-sm"
+                title="將 RPJG BotCloud 安裝為本機原生 APP，享有專屬機器人圖標與獨立全螢幕視窗"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-indigo-400" />
+                <span>安裝 APP</span>
+              </button>
+            )}
 
             {/* 全域日誌與審計按鈕 (Super Admin 或 經銷代理商) */}
             {(isSuperAdmin || currentUser?.role === 'RESELLER') && (
@@ -1221,33 +1253,44 @@ export default function App() {
                 </button>
               </div>
 
-              {/* 官方專屬高畫質桌布下載卡片 (手機/電腦分開) */}
-              <div className="p-3.5 rounded-xl bg-[#141517] border border-[#2b2d31] space-y-2">
-                <div className="flex items-center space-x-1.5 text-xs font-bold text-gray-300">
-                  <ImageIcon className="w-4 h-4 text-cyan-400" />
-                  <span>官方機器人專屬桌布</span>
+              {/* 原生 PWA APP 安裝卡片 (APP 頭貼即藍紫色機器人圖標) */}
+              <div className="p-3.5 rounded-xl bg-[#141517] border border-[#2b2d31] space-y-2.5">
+                <div className="flex items-center space-x-3">
+                  <img
+                    src="/icons/icon-192.png"
+                    alt="RPJG BotCloud APP"
+                    className="w-10 h-10 rounded-xl shadow-lg border border-indigo-500/40 shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white flex items-center space-x-1.5 truncate">
+                      <span>RPJG BotCloud APP</span>
+                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-discord-blurple/20 text-indigo-300 border border-discord-blurple/30 shrink-0">
+                        APP
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-gray-400 truncate">
+                      {isStandalone ? '已安裝為原生 APP 模式' : '可直接安裝至手機桌面 / 電腦'}
+                    </p>
+                  </div>
                 </div>
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  系統已為電腦 (16:9) 與手機 (9:16) 配置專屬 Cyberpunk 霓虹桌布。
-                </p>
-                <div className="flex gap-2 pt-1">
-                  <a
-                    href="/wallpaper-mobile.jpg"
-                    download="RPJG-Mobile-Wallpaper.jpg"
-                    className="flex-1 py-1.5 px-2 rounded-lg bg-[#1e1f22] hover:bg-gray-700 text-cyan-300 text-[11px] font-bold text-center border border-cyan-500/30 flex items-center justify-center space-x-1"
+
+                {isStandalone ? (
+                  <div className="flex items-center justify-center space-x-1.5 py-2 px-3 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-emerald-400 text-xs font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>正於原生 APP 模式流暢運行</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      handleInstallClick();
+                    }}
+                    className="w-full py-2 px-3 rounded-lg bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-md shadow-discord-blurple/25"
                   >
-                    <Download className="w-3 h-3" />
-                    <span>手機桌布</span>
-                  </a>
-                  <a
-                    href="/wallpaper-desktop.jpg"
-                    download="RPJG-Desktop-Wallpaper.jpg"
-                    className="flex-1 py-1.5 px-2 rounded-lg bg-[#1e1f22] hover:bg-gray-700 text-indigo-300 text-[11px] font-bold text-center border border-indigo-500/30 flex items-center justify-center space-x-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>電腦桌布</span>
-                  </a>
-                </div>
+                    <Smartphone className="w-3.5 h-3.5" />
+                    <span>{isIos ? '加入 iPhone 主畫面教學' : '安裝至手機主畫面'}</span>
+                  </button>
+                )}
               </div>
 
               <button
@@ -1292,6 +1335,72 @@ export default function App() {
         currentUser={currentUser}
         bots={bots}
       />
+
+      {/* iOS 與 PWA APP 安裝說明彈窗 */}
+      {isIosInstallModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#1e1f22] border border-[#2b2d31] rounded-2xl w-full max-w-sm p-5 space-y-4 shadow-2xl relative">
+            <button
+              onClick={() => setIsIosInstallModalOpen(false)}
+              className="absolute top-3.5 right-3.5 p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-700 transition"
+              title="關閉"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center space-x-3">
+              <img
+                src="/icons/icon-192.png"
+                alt="RPJG App Icon"
+                className="w-12 h-12 rounded-2xl shadow-lg border border-indigo-500/40"
+              />
+              <div>
+                <h3 className="text-sm font-bold text-white">安裝 RPJG BotCloud APP</h3>
+                <p className="text-[11px] text-gray-400">專屬原創藍紫機器人圖標 • 獨立全螢幕</p>
+              </div>
+            </div>
+
+            <div className="space-y-2.5 pt-1 text-xs text-gray-300">
+              <div className="flex items-start space-x-2.5 p-2.5 rounded-xl bg-[#141517] border border-[#2b2d31]">
+                <div className="w-5 h-5 rounded-full bg-discord-blurple text-white flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
+                  1
+                </div>
+                <div>
+                  <p className="font-semibold text-white">點選瀏覽器底部「分享」按鈕</p>
+                  <p className="text-[11px] text-gray-400">在 Safari 底部點選中間帶向上箭頭的方塊圖示</p>
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-2.5 p-2.5 rounded-xl bg-[#141517] border border-[#2b2d31]">
+                <div className="w-5 h-5 rounded-full bg-discord-blurple text-white flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
+                  2
+                </div>
+                <div>
+                  <p className="font-semibold text-white">選擇「加入主畫面 (Add to Home Screen)」</p>
+                  <p className="text-[11px] text-gray-400">在選單中往下滑動即可看見此選項</p>
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-2.5 p-2.5 rounded-xl bg-[#141517] border border-[#2b2d31]">
+                <div className="w-5 h-5 rounded-full bg-discord-blurple text-white flex items-center justify-center text-[11px] font-bold shrink-0 mt-0.5">
+                  3
+                </div>
+                <div>
+                  <p className="font-semibold text-white">點擊右上角「新增」</p>
+                  <p className="text-[11px] text-gray-400">專屬藍紫色機器人圖標將立即出現於手機主畫面！</p>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsIosInstallModalOpen(false)}
+              className="w-full py-2.5 rounded-xl bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-bold transition shadow-lg shadow-discord-blurple/30"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
