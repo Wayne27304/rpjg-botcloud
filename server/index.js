@@ -327,7 +327,7 @@ app.get('/api/debug/net-test', async (req, res) => {
   });
 });
 
-// 管理員：測試 Gmail SMTP 發信連線
+// 管理員：測試 Gmail 發信連線 (支援 GAS HTTPS 轉發與 Direct SMTP)
 app.post('/api/admin/test-email', requireAuth, requireSuperAdmin, async (req, res) => {
   try {
     const { targetEmail } = req.body;
@@ -336,6 +336,25 @@ app.post('/api/admin/test-email', requireAuth, requireSuperAdmin, async (req, re
   } catch (err) {
     res.status(500).json({ success: false, message: `發信異常: ${err.message}` });
   }
+});
+
+// 管理員：取得郵件發送設定與引擎狀態
+app.get('/api/admin/mailer-settings', requireAuth, requireSuperAdmin, (req, res) => {
+  res.json({
+    success: true,
+    ...mailerService.getEngineStatus()
+  });
+});
+
+// 管理員：儲存 Google Apps Script HTTPS 轉發網址
+app.post('/api/admin/mailer-settings', requireAuth, requireSuperAdmin, (req, res) => {
+  const { relayUrl } = req.body;
+  const saved = mailerService.setRelayUrl(relayUrl);
+  res.json({
+    success: true,
+    message: saved ? '已成功儲存 Google Apps Script 轉發網址！' : '已重置為原生 SMTP 直連模式',
+    relayUrl: saved
+  });
 });
 
 // 管理員：調配特定使用者的空間配額與機器人數量

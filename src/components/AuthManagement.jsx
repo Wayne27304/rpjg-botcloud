@@ -33,6 +33,7 @@ import {
   Filter
 } from 'lucide-react';
 import GlobalAuditLogsModal from './GlobalAuditLogsModal';
+import EmailSettingsModal from './EmailSettingsModal';
 
 export default function AuthManagement({ currentUser, bots = [] }) {
   const [users, setUsers] = useState([]);
@@ -52,6 +53,7 @@ export default function AuthManagement({ currentUser, bots = [] }) {
   const [resellerMaxUsers, setResellerMaxUsers] = useState(10);
   const [userRoleFilter, setUserRoleFilter] = useState('ALL'); // 'ALL' | 'RESELLER' | 'USER'
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
   const [isTestingEmail, setIsTestingEmail] = useState(false);
   const [emailTestResult, setEmailTestResult] = useState(null);
 
@@ -658,13 +660,12 @@ export default function AuthManagement({ currentUser, bots = [] }) {
             </button>
 
             <button
-              onClick={handleTestEmail}
-              disabled={isTestingEmail}
+              onClick={() => setIsEmailModalOpen(true)}
               className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition shadow-sm"
-              title="測試寄送驗證信至管理員信箱"
+              title="設定與測試 Gmail 發信 (支援 Google Apps Script HTTPS 轉發與 SMTP)"
             >
-              <Mail className={`w-3.5 h-3.5 ${isTestingEmail ? 'animate-spin' : ''}`} />
-              <span>{isTestingEmail ? '測試發信中...' : '測試 Gmail 寄信'}</span>
+              <Mail className="w-3.5 h-3.5" />
+              <span>Gmail 郵件設定</span>
             </button>
 
             <button
@@ -1428,6 +1429,13 @@ export default function AuthManagement({ currentUser, bots = [] }) {
         onClose={() => setIsAuditModalOpen(false)}
         currentUser={currentUser}
         bots={bots}
+      />
+
+      {/* Gmail 郵件設定與轉發彈窗 */}
+      <EmailSettingsModal
+        isOpen={isEmailModalOpen}
+        onClose={() => setIsEmailModalOpen(false)}
+        currentUser={currentUser}
       />
     </div>
   );

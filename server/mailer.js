@@ -1,6 +1,9 @@
 /**
  * ================================================================
  * RPJG BotCloud - Gmail 郵件自動發送服務 (Mailer Service)
+ * 支援雙發信引擎：
+ *  1. Google Apps Script (GAS) HTTPS 轉發引擎 (埠口 443，徹底突破 Render 免費版封鎖 SMTP 465/587)
+ *  2. 原生 Nodemailer Gmail SMTP 引擎 (適用於本機開發或 Render 付費方案)
  * 作者：R.P.J.G 開發部門
  * ================================================================
  */
@@ -8,6 +11,7 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import dns from 'dns';
 import { fileURLToPath } from 'url';
 
@@ -20,10 +24,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
+const DATA_DIR = path.join(__dirname, 'data');
+const SETTINGS_FILE = path.join(DATA_DIR, 'mailer_settings.json');
+
+export const GAS_RELAY_SECURITY_TOKEN = 'RPJG_GMAIL_RELAY_TOKEN_2026';
+
 class MailerService {
   constructor() {
     this.fallbackUser = 'ryanryan311311@gmail.com';
     this.fallbackPass = 'eztq xvot cdwk ehnp';
+    this.cachedRelayUrl = null;
+
+    if (!fs.existsSync(DATA_DIR)) {
+      try {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+      } catch (_) {}
+    }
   }
 
   getCredentials() {
@@ -35,9 +51,59 @@ class MailerService {
     return { user, pass };
   }
 
+  getRelayUrl() {
+    if (this.cachedRelayUrl) return this.cachedRelayUrl;
+    if (process.env.GMAIL_RELAY_URL && process.env.GMAIL_RELAY_URL.trim()) {
+      return process.env.GMAIL_RELAY_URL.trim();
+    }
+    if (fs.existsSync(SETTINGS_FILE)) {
+      try {
+        const raw = fs.readFileSync(SETTINGS_FILE, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed.relayUrl) {
+          this.cachedRelayUrl = parsed.relayUrl.trim();
+          return this.cachedRelayUrl;
+        }
+      } catch (_) {}
+    }
+    return '';
+  }
+
+  setRelayUrl(url) {
+    const cleanUrl = (url || '').trim();
+    this.cachedRelayUrl = cleanUrl;
+    try {
+      let current = {};
+      if (fs.existsSync(SETTINGS_FILE)) {
+        try {
+          current = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+        } catch (_) {}
+      }
+      current.relayUrl = cleanUrl;
+      current.updatedAt = new Date().toISOString();
+      fs.writeFileSync(SETTINGS_FILE, JSON.stringify(current, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[MAILER] 儲存 mailer_settings.json 失敗:', err.message);
+    }
+    return cleanUrl;
+  }
+
   isConfigured() {
+    const relayUrl = this.getRelayUrl();
+    if (relayUrl) return true;
     const { user, pass } = this.getCredentials();
     return !!(user && pass);
+  }
+
+  getEngineStatus() {
+    const relayUrl = this.getRelayUrl();
+    const { user } = this.getCredentials();
+    return {
+      activeEngine: relayUrl ? 'GAS_HTTPS_RELAY' : 'DIRECT_SMTP',
+      relayUrl: relayUrl || null,
+      smtpUser: user,
+      isConfigured: this.isConfigured()
+    };
   }
 
   // 取得獨立且全新的 SMTP 連線實例 (強制 IPv4，避免 Socket 閒置斷線逾時與 ENETUNREACH)
@@ -51,47 +117,113 @@ class MailerService {
       secure: true,
       family: 4, // 強制 IPv4 連線，徹底解決 Render 容器無 IPv6 路由錯誤
       auth: { user, pass },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 20000,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
       tls: {
         rejectUnauthorized: false
       }
     });
   }
 
+  // 透過 Google Apps Script HTTPS Web App 轉發寄信 (埠口 443，保證 100% 不受主機防火牆封鎖)
+  async sendViaRelay({ to, subject, html, text }) {
+    const relayUrl = this.getRelayUrl();
+    if (!relayUrl) return null;
+
+    const payload = {
+      token: GAS_RELAY_SECURITY_TOKEN,
+      to,
+      subject,
+      html,
+      text: text || '',
+      senderName: 'R.P.J.G 開發部門'
+    };
+
+    console.log(`[RPJG-MAIL-GAS] 🚀 正在透過 Google Apps Script HTTPS 轉發至 ${to}...`);
+    const res = await fetch(relayUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      redirect: 'follow'
+    });
+
+    const data = await res.json();
+    return data;
+  }
+
   // 測試連線與發送測試信 (提供給管理介面一鍵測試)
   async testConnection(targetEmail) {
     const { user } = this.getCredentials();
-    const transporter = this.getTransporter();
+    const relayUrl = this.getRelayUrl();
+    const cleanTarget = (targetEmail || user || 'ryanryan311311@gmail.com').trim().toLowerCase();
 
-    if (!transporter) {
-      return { success: false, message: '尚未配置 Gmail 寄件帳號與應用程式密碼' };
+    const subject = '【RPJG BotCloud】Gmail 郵件發送測試成功';
+    const text = '這是一封來自 RPJG BotCloud 的自動發信測試，代表您的寄件通道完全暢通！';
+    const html = `
+      <div style="font-family: sans-serif; padding: 24px; background: #1e1f22; color: #f2f3f5; border-radius: 12px; border: 1px solid #35373c;">
+        <h2 style="color: #5865F2; margin-top: 0;">🎉 RPJG BotCloud - Gmail 連線測試成功</h2>
+        <p>主管您好！您的自動發信功能運作一切正常。</p>
+        <p>當前運作模式：<strong style="color: #38bdf8;">${relayUrl ? '⚡ Google Apps Script HTTPS 官方轉發 (埠口 443 永不斷線)' : '📡 原生 Gmail SMTP 直連'}</strong></p>
+        <p>系統日後在您授權經銷代理商或開通客戶帳號時，會自動以此信箱（${user}）寄送認證信件！</p>
+        <hr style="border: 0; border-top: 1px solid #35373c; margin: 20px 0;" />
+        <p style="font-size: 11px; color: #949ba4;">測試時間：${new Date().toLocaleString('zh-TW')} • R.P.J.G 開發部門</p>
+      </div>
+    `;
+
+    // 優先使用 Google Apps Script HTTPS 轉發
+    if (relayUrl) {
+      try {
+        const gasResult = await this.sendViaRelay({ to: cleanTarget, subject, html, text });
+        if (gasResult && gasResult.success) {
+          console.log(`[RPJG-MAIL-TEST] ✅ 測試信已透過 GAS 轉發寄出至 ${cleanTarget}`);
+          return {
+            success: true,
+            engine: 'GAS_HTTPS_RELAY',
+            message: `測試信已成功透過 Google Apps Script 寄送至 ${cleanTarget}！`
+          };
+        } else {
+          return {
+            success: false,
+            engine: 'GAS_HTTPS_RELAY',
+            message: `GAS 轉發失敗: ${gasResult?.message || '未知錯誤'}`
+          };
+        }
+      } catch (err) {
+        console.error('[RPJG-MAIL-TEST] ❌ GAS 轉發異常:', err.message);
+        return { success: false, engine: 'GAS_HTTPS_RELAY', message: `GAS 轉發異常: ${err.message}` };
+      }
     }
 
-    const cleanTarget = (targetEmail || user || 'ryanryan311311@gmail.com').trim().toLowerCase();
+    // 次選：原生 SMTP 直連
+    const transporter = this.getTransporter();
+    if (!transporter) {
+      return { success: false, message: '尚未配置 Gmail 寄件帳號與應用程式密碼，亦未設定 GAS 轉發網址' };
+    }
+
     try {
       await transporter.verify();
       const info = await transporter.sendMail({
         from: `"R.P.J.G 開發部門" <${user}>`,
         to: cleanTarget,
-        subject: '【RPJG BotCloud】Gmail SMTP 發信測試成功',
-        text: '這是一封來自 RPJG BotCloud 的自動發信測試，代表您的 Gmail 寄件設定完全正常！',
-        html: `
-          <div style="font-family: sans-serif; padding: 24px; background: #1e1f22; color: #f2f3f5; border-radius: 12px; border: 1px solid #35373c;">
-            <h2 style="color: #5865F2; margin-top: 0;">🎉 RPJG BotCloud - Gmail 連線測試成功</h2>
-            <p>主管您好！您的 Gmail SMTP 自動發信功能運作一切正常。</p>
-            <p>系統日後在您授權經銷代理商或開通客戶帳號時，會自動以此信箱（${user}）寄送認證信件！</p>
-            <hr style="border: 0; border-top: 1px solid #35373c; margin: 20px 0;" />
-            <p style="font-size: 11px; color: #949ba4;">測試時間：${new Date().toLocaleString('zh-TW')} • R.P.J.G 開發部門</p>
-          </div>
-        `
+        subject,
+        text,
+        html
       });
-      console.log(`[RPJG-MAIL-TEST] ✅ 測試信已寄出至 ${cleanTarget} (MessageID: ${info.messageId})`);
-      return { success: true, message: `測試信已成功寄送至 ${cleanTarget}！`, messageId: info.messageId };
+      console.log(`[RPJG-MAIL-TEST] ✅ 測試信已透過 SMTP 寄出至 ${cleanTarget} (MessageID: ${info.messageId})`);
+      return {
+        success: true,
+        engine: 'DIRECT_SMTP',
+        message: `測試信已成功透過 SMTP 寄送至 ${cleanTarget}！`,
+        messageId: info.messageId
+      };
     } catch (err) {
-      console.error('[RPJG-MAIL-TEST] ❌ 測試發信失敗:', err.message);
-      return { success: false, message: `發信失敗: ${err.message}` };
+      console.error('[RPJG-MAIL-TEST] ❌ SMTP 發信失敗:', err.message);
+      const isTimeout = err.message.includes('timeout') || err.message.includes('ENETUNREACH') || err.message.includes('ETIMEDOUT');
+      const helpfulMsg = isTimeout
+        ? `發信超時 (因 Render 免費主機防火牆封鎖了 SMTP 465/587 埠口)。請在後台設定「Google Apps Script HTTPS 轉發網址」即可一秒免費打通！詳細: ${err.message}`
+        : `發信失敗: ${err.message}`;
+      return { success: false, engine: 'DIRECT_SMTP', message: helpfulMsg };
     }
   }
 
@@ -121,16 +253,7 @@ class MailerService {
     console.log(`[RPJG-MAIL] 📨 正在處理 [${roleLabel}] 開通信件 ➜ ${cleanEmail}`);
 
     const { user } = this.getCredentials();
-    const transporter = this.getTransporter();
-
-    if (!transporter) {
-      console.log(`[RPJG-MAIL 模擬記錄] 目標: ${cleanEmail} | 密碼: ${plainPassword} | 角色: ${roleLabel} | 配額: ${maxStorageMB}MB`);
-      return {
-        success: false,
-        unconfigured: true,
-        message: '尚未配置 Gmail 寄件金鑰，帳號已開通成功，請手動將帳密告知對方。'
-      };
-    }
+    const relayUrl = this.getRelayUrl();
 
     const htmlContent = `
     <!DOCTYPE html>
@@ -217,18 +340,51 @@ class MailerService {
     </html>
     `;
 
+    const subject = `【RPJG BotCloud】您的 ${isReseller ? '代理商' : '機器人託管'} 帳號已開通成功 (內附登入密碼)`;
+
+    // 1. 若有設定 GAS 轉發，優先以 HTTPS (Port 443) 轉發
+    if (relayUrl) {
+      try {
+        const gasResult = await this.sendViaRelay({
+          to: cleanEmail,
+          subject,
+          html: htmlContent,
+          text: `您的 RPJG BotCloud 帳號已開通！登入帳號: ${cleanEmail}，密碼: ${plainPassword}，前往平台: ${platformUrl}`
+        });
+        if (gasResult && gasResult.success) {
+          console.log(`[RPJG-MAIL-GAS] ✅ 憑證信件已成功由 GAS 轉發至 ${cleanEmail}`);
+          return { success: true, engine: 'GAS_HTTPS_RELAY' };
+        } else {
+          console.error(`[RPJG-MAIL-GAS] 🔴 GAS 轉發回報錯誤:`, gasResult?.message);
+        }
+      } catch (err) {
+        console.error(`[RPJG-MAIL-GAS] 🔴 GAS 轉發呼叫異常:`, err.message);
+      }
+    }
+
+    // 2. SMTP 備援發送 (本機或付費 Render 實例)
+    const transporter = this.getTransporter();
+    if (!transporter) {
+      console.log(`[RPJG-MAIL 模擬記錄] 目標: ${cleanEmail} | 密碼: ${plainPassword} | 角色: ${roleLabel} | 配額: ${maxStorageMB}MB`);
+      return {
+        success: false,
+        unconfigured: true,
+        message: '尚未配置 Gmail 寄件金鑰或 GAS 轉發網址，帳號已開通成功，請手動將帳密告知對方。'
+      };
+    }
+
     try {
       const info = await transporter.sendMail({
         from: `"R.P.J.G 開發部門" <${user}>`,
         to: cleanEmail,
-        subject: `【RPJG BotCloud】您的 ${isReseller ? '代理商' : '機器人託管'} 帳號已開通成功 (內附登入密碼)`,
+        subject,
         html: htmlContent
       });
 
       console.log(`[RPJG-MAIL] ✅ 信件已成功送達 ${cleanEmail} (MessageID: ${info.messageId})`);
-      return { success: true, messageId: info.messageId };
+      return { success: true, engine: 'DIRECT_SMTP', messageId: info.messageId };
     } catch (err) {
-      console.error(`[RPJG-MAIL] 🔴 寄信失敗 (${cleanEmail}):`, err.message);
+      console.error(`[RPJG-MAIL] 🔴 SMTP 寄信失敗 (${cleanEmail}):`, err.message);
       return { success: false, error: err.message };
     }
   }
