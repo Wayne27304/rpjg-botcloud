@@ -144,7 +144,7 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
   };
 
   const handleDeleteClient = async (clientEmail) => {
-    if (!confirm(`確定要收回並刪除客戶 ${clientEmail} 的授權嗎？其所佔用的額度將會全額返還給您的代理池。`)) return;
+    if (!confirm(`確定要收回並徹底刪除客戶 ${clientEmail} 的授權嗎？\n⚠️ 該客戶名下的所有託管機器人將會一併停止並刪除，佔用的空間與機器人額度將會全額返還給您的代理池。`)) return;
     const token = localStorage.getItem('rpjg_auth_token');
     try {
       const res = await fetch(`/api/reseller/users/${encodeURIComponent(clientEmail)}`, {
@@ -153,12 +153,13 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
       });
       const data = await res.json();
       if (data.success) {
+        alert(data.message || `已成功移除客戶 ${clientEmail} 及關聯機器人！`);
         fetchOverview();
       } else {
         alert(data.message || '刪除失敗');
       }
     } catch (e) {
-      console.error(e);
+      alert('刪除請求失敗: ' + e.message);
     }
   };
 

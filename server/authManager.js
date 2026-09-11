@@ -21,6 +21,7 @@ import { auditLogger } from './auditLogger.js';
 
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
+const DELETED_USERS_FILE = path.join(DATA_DIR, 'deleted_users.json');
 
 const SECRET_KEY = 'RPJG_SECRET_KEY_' + (process.env.JWT_SECRET || 'rpjg_super_auth_token_secret_2026');
 
@@ -31,13 +32,56 @@ class AuthManager {
     this.usersCache = [];
     this.supabase = null;
     this.isCloudActive = false;
+    this.deletedUsersSet = new Set();
 
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
 
+    this.loadDeletedUsers();
     this.initSupabase();
     this.initUsers();
+  }
+
+  // 載入已明確徹底刪除的使用者名冊 (避免重啟時從環境變數等靜態配置中復活)
+  loadDeletedUsers() {
+    try {
+      if (fs.existsSync(DELETED_USERS_FILE)) {
+        const data = fs.readFileSync(DELETED_USERS_FILE, 'utf8');
+        const list = JSON.parse(data);
+        if (Array.isArray(list)) {
+          this.deletedUsersSet = new Set(list.map(e => (e || '').toLowerCase().trim()));
+        }
+      }
+    } catch (err) {
+      console.warn('載入 deleted_users.json 失敗:', err.message);
+    }
+  }
+
+  // 記錄已徹底刪除的使用者至永久墓碑
+  recordDeletedUser(email) {
+    if (!email) return;
+    const cleanEmail = email.toLowerCase().trim();
+    this.deletedUsersSet.add(cleanEmail);
+    try {
+      fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(Array.from(this.deletedUsersSet), null, 2), 'utf8');
+    } catch (err) {
+      console.warn('寫入 deleted_users.json 失敗:', err.message);
+    }
+  }
+
+  // 若該帳號被管理員重新建立授權，解除其墓碑標記
+  unrecordDeletedUser(email) {
+    if (!email) return;
+    const cleanEmail = email.toLowerCase().trim();
+    if (this.deletedUsersSet.has(cleanEmail)) {
+      this.deletedUsersSet.delete(cleanEmail);
+      try {
+        fs.writeFileSync(DELETED_USERS_FILE, JSON.stringify(Array.from(this.deletedUsersSet), null, 2), 'utf8');
+      } catch (err) {
+        console.warn('寫入 deleted_users.json 失敗:', err.message);
+      }
+    }
   }
 
   // 初始化 Supabase 雲端客戶端
@@ -92,10 +136,16 @@ class AuthManager {
         }
 
         if (Array.isArray(parsed) && parsed.length > 0) {
-          console.log(`[BACKUP-ENV] 📦 從 RPJG_USERS_BACKUP 環境變數還原了 ${parsed.length} 個帳號！`);
+          console.log(`[BACKUP-ENV] 📦 從 RPJG_USERS_BACKUP 環境變數讀取到 ${parsed.length} 個帳號...`);
           for (const bUser of parsed) {
             if (!bUser || !bUser.email) continue;
-            const idx = users.findIndex(u => u.email.toLowerCase() === bUser.email.toLowerCase());
+            const bEmail = bUser.email.toLowerCase().trim();
+            // 防護：若帳號已在墓碑名冊中，跳過不復活
+            if (this.deletedUsersSet.has(bEmail)) {
+              console.log(`[BACKUP-ENV] 🚫 跳過已明確徹底刪除之帳號: ${bEmail}`);
+              continue;
+            }
+            const idx = users.findIndex(u => u.email.toLowerCase() === bEmail);
             if (idx >= 0) {
               users[idx] = { ...users[idx], ...bUser };
             } else {
@@ -155,19 +205,31 @@ class AuthManager {
           .from('rpjg_bot_users')
           .select('*');
 
-        if (!error && data && Array.isArray(data) && data.length > 0) {
+        if (!error && data && Array.isArray(data)) {
           console.log(`[CLOUD] 🟢 成功自 Supabase 雲端載入 ${data.length} 筆授權資料！`);
           
+          const cloudEmails = new Set(data.map(r => (r.email || '').toLowerCase().trim()));
+
+          // 清除本地緩存中已被雲端刪除或在墓碑中的幽靈帳號 (最高主管除外)
+          this.usersCache = this.usersCache.filter(u => {
+            const uEmail = u.email.toLowerCase();
+            if (uEmail === SUPER_ADMIN_EMAIL.toLowerCase()) return true;
+            return cloudEmails.has(uEmail) && !this.deletedUsersSet.has(uEmail);
+          });
+
           // 將 Supabase 資料庫欄位對齊至本機記憶體
           for (const row of data) {
+            const rowEmail = (row.email || '').toLowerCase().trim();
+            if (this.deletedUsersSet.has(rowEmail)) continue;
+
             const userObj = {
               id: row.id,
-              email: (row.email || '').toLowerCase(),
+              email: rowEmail,
               passwordHash: row.password_hash,
               plainPasswordHint: row.plain_password_hint,
               role: row.role || 'USER',
               isResellerDisabled: Boolean(row.is_reseller_disabled),
-              displayName: row.display_name || row.email.split('@')[0],
+              displayName: row.display_name || rowEmail.split('@')[0],
               status: row.status || 'ACTIVE',
               expiresAt: row.expires_at || null,
               maxBots: row.max_bots || 5,
@@ -176,7 +238,7 @@ class AuthManager {
               createdAt: row.created_at || new Date().toISOString()
             };
 
-            const idx = this.usersCache.findIndex(u => u.email.toLowerCase() === userObj.email);
+            const idx = this.usersCache.findIndex(u => u.email.toLowerCase() === rowEmail);
             if (idx >= 0) {
               this.usersCache[idx] = { ...this.usersCache[idx], ...userObj };
             } else {
@@ -197,9 +259,20 @@ class AuthManager {
       const gasUsers = await this.fetchUsersFromGasRelay();
       if (gasUsers && Array.isArray(gasUsers) && gasUsers.length > 0) {
         console.log(`[CLOUD-VAULT] 🟢 成功自 Google 雲端金鑰庫還原 ${gasUsers.length} 筆派發金鑰與帳號！`);
+        const gasEmails = new Set(gasUsers.map(b => (b.email || '').toLowerCase().trim()));
+
+        this.usersCache = this.usersCache.filter(u => {
+          const uEmail = u.email.toLowerCase();
+          if (uEmail === SUPER_ADMIN_EMAIL.toLowerCase()) return true;
+          return gasEmails.has(uEmail) && !this.deletedUsersSet.has(uEmail);
+        });
+
         for (const bUser of gasUsers) {
           if (!bUser || !bUser.email) continue;
-          const idx = this.usersCache.findIndex(u => u.email.toLowerCase() === bUser.email.toLowerCase());
+          const bEmail = bUser.email.toLowerCase().trim();
+          if (this.deletedUsersSet.has(bEmail)) continue;
+
+          const idx = this.usersCache.findIndex(u => u.email.toLowerCase() === bEmail);
           if (idx >= 0) {
             this.usersCache[idx] = { ...this.usersCache[idx], ...bUser };
           } else {
@@ -600,6 +673,7 @@ class AuthManager {
       users.push(targetUser);
     }
 
+    this.unrecordDeletedUser(cleanEmail);
     this.saveUsers(users);
     this.syncUserToCloud(targetUser);
 
@@ -902,6 +976,14 @@ class AuthManager {
       if (!user.resellerQuotaMB) user.resellerQuotaMB = 5000;
       if (!user.resellerMaxBots) user.resellerMaxBots = 20;
       if (!user.resellerMaxUsers) user.resellerMaxUsers = 10;
+    } else {
+      // 降為普通買家客戶：清除經銷商停用標記，並將其旗下客戶解綁直屬總管
+      user.isResellerDisabled = false;
+      for (const u of users) {
+        if ((u.parentResellerEmail || '').toLowerCase() === cleanEmail) {
+          u.parentResellerEmail = null;
+        }
+      }
     }
     user.updatedAt = new Date().toISOString();
 
@@ -918,11 +1000,11 @@ class AuthManager {
     return {
       success: true,
       role: user.role,
-      message: `已成功將 ${cleanEmail} 身分調整為 ${newRole === 'RESELLER' ? '經銷代理商' : '普通買家客戶'}！`
+      message: `已成功將 ${cleanEmail} 身分調整為「${newRole === 'RESELLER' ? '經銷代理商' : '普通買家客戶'}」！`
     };
   }
 
-  // 刪除使用者
+  // 徹底刪除使用者 (含孤兒客戶解綁、加入永久墓碑、同步清除雲端)
   deleteUser(email, actorUser = null) {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
@@ -939,18 +1021,36 @@ class AuthManager {
       }
     }
 
+    // 1. 若該帳號為經銷商，將其旗下客戶的 parentResellerEmail 解除關聯 (轉為直屬總管)
+    for (const u of users) {
+      if ((u.parentResellerEmail || '').toLowerCase() === cleanEmail) {
+        u.parentResellerEmail = null;
+      }
+    }
+
+    // 2. 從名冊中徹底移除
     let updatedUsers = users.filter(u => u.email.toLowerCase() !== cleanEmail);
+    
+    // 3. 記錄至永久墓碑名冊，防止環境變數 (RPJG_USERS_BACKUP) 在 Render 重啟時重新復活
+    this.recordDeletedUser(cleanEmail);
+
+    // 4. 保存至本機 JSON 及 Google Apps Script 雲端
     this.saveUsers(updatedUsers);
+
+    // 5. 從 Supabase 雲端資料庫徹底刪除
     this.deleteUserFromCloud(cleanEmail);
 
     auditLogger.log(
       actorUser?.email || SUPER_ADMIN_EMAIL,
       'DELETE_USER',
       cleanEmail,
-      { role: user.role }
+      { role: user.role, displayName: user.displayName }
     );
 
-    return { success: true, message: `已移除帳號 ${cleanEmail}` };
+    return { 
+      success: true, 
+      message: `已徹底完全刪除帳號 ${cleanEmail} (已同步清除所有雲端備份與關聯機器人)！` 
+    };
   }
 
   // 取得所有使用者列表 (提供給授權中心)
@@ -1072,6 +1172,7 @@ class AuthManager {
       }
       importedCount++;
 
+      this.unrecordDeletedUser(cleanEmail);
       // 同步至 Supabase
       this.syncUserToCloud(userObj);
     }

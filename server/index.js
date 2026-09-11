@@ -272,9 +272,19 @@ app.post('/api/reseller/authorize', requireAuth, requireResellerOrAdmin, (req, r
   res.json(result);
 });
 
-// 經銷代理商：移除自己旗下的客戶帳號
+// 經銷代理商：移除自己旗下的客戶帳號 (連同關聯機器人一併徹底清除)
 app.delete('/api/reseller/users/:email', requireAuth, requireResellerOrAdmin, (req, res) => {
-  const result = authManager.deleteUser(req.params.email, req.user);
+  const targetEmail = req.params.email;
+  try {
+    const allBots = botManager.listBots(null, true);
+    const userBots = allBots.filter(b => (b.ownerEmail || '').toLowerCase() === targetEmail.toLowerCase());
+    for (const b of userBots) {
+      botManager.deleteBot(b.id, req.user?.email || SUPER_ADMIN_EMAIL);
+    }
+  } catch (err) {
+    console.error('[CASCADE-BOT-DELETE] 清理旗下客戶機器人異常:', err.message);
+  }
+  const result = authManager.deleteUser(targetEmail, req.user);
   res.json(result);
 });
 
@@ -413,9 +423,19 @@ app.post('/api/auth/users/:email/role', requireAuth, requireSuperAdmin, (req, re
   res.json(result);
 });
 
-// 管理員：刪除授權帳號
+// 管理員：徹底刪除授權帳號 (連同關聯機器人與專案檔案一併徹底抹除)
 app.delete('/api/auth/users/:email', requireAuth, requireSuperAdmin, (req, res) => {
-  const result = authManager.deleteUser(req.params.email, req.user);
+  const targetEmail = req.params.email;
+  try {
+    const allBots = botManager.listBots(null, true);
+    const userBots = allBots.filter(b => (b.ownerEmail || '').toLowerCase() === targetEmail.toLowerCase());
+    for (const b of userBots) {
+      botManager.deleteBot(b.id, req.user?.email || SUPER_ADMIN_EMAIL);
+    }
+  } catch (err) {
+    console.error('[CASCADE-BOT-DELETE] 清理關聯機器人異常:', err.message);
+  }
+  const result = authManager.deleteUser(targetEmail, req.user);
   res.json(result);
 });
 

@@ -362,8 +362,12 @@ export default function AuthManagement({ currentUser, bots = [] }) {
     }
   };
 
-  const handleDelete = async (targetEmail) => {
-    if (!confirm(`確定要移除 ${targetEmail} 的授權資格嗎？此使用者將無法再登入。`)) return;
+  const handleDelete = async (targetEmail, isReseller = false) => {
+    const confirmPrompt = isReseller
+      ? `【重要警告】確定要徹底刪除「經銷代理商」帳號 ${targetEmail} 嗎？\n\n⚠️ 此操作將同時：\n1. 永久刪除此經銷商帳號\n2. 徹底停止並刪除該帳號所託管的所有 Discord 機器人\n3. 同步從本機與 Google / Supabase 雲端資料庫中完全抹除\n\n此操作無法復原，是否確定徹底刪除？`
+      : `確定要徹底刪除客戶 ${targetEmail} 的授權嗎？\n⚠️ 將同時停止並刪除該帳號所有的託管機器人，且無法復原。`;
+
+    if (!window.confirm(confirmPrompt)) return;
     const token = localStorage.getItem('rpjg_auth_token');
     try {
       const res = await fetch(`/api/auth/users/${encodeURIComponent(targetEmail)}`, {
@@ -372,11 +376,16 @@ export default function AuthManagement({ currentUser, bots = [] }) {
       });
       const data = await res.json();
       if (data.success) {
+        alert(data.message || `已成功徹底移除 ${targetEmail}！`);
         fetchUsers();
         fetchStorageStatus();
+        fetchStorageOverview();
+        fetchBotsBackup();
+      } else {
+        alert(data.message || '刪除失敗');
       }
     } catch (e) {
-      console.error(e);
+      alert('刪除請求失敗: ' + e.message);
     }
   };
 
@@ -406,8 +415,13 @@ export default function AuthManagement({ currentUser, bots = [] }) {
 
   // 切換角色 (USER / RESELLER)
   const handleChangeRole = async (targetEmail, newRole) => {
+    const isDemoting = newRole === 'USER';
     const roleName = newRole === 'RESELLER' ? '經銷代理商' : '普通買家客戶';
-    if (!window.confirm(`確定要將 ${targetEmail} 的身分變更為「${roleName}」嗎？`)) return;
+    const confirmPrompt = isDemoting
+      ? `確定要撤銷 ${targetEmail} 的經銷商身分，將其「降為普通買家客戶」嗎？\n\n💡 說明：該用戶將立即失去經銷代理權限（不再顯示於經銷商名冊中），但其帳號與現有機器人仍可保留使用。`
+      : `確定要將 ${targetEmail} 的身分提升為「經銷代理商」嗎？`;
+
+    if (!window.confirm(confirmPrompt)) return;
     const token = localStorage.getItem('rpjg_auth_token');
     try {
       const res = await fetch(`/api/auth/users/${encodeURIComponent(targetEmail)}/role`, {
@@ -420,9 +434,10 @@ export default function AuthManagement({ currentUser, bots = [] }) {
       });
       const data = await res.json();
       if (data.success) {
-        alert(data.message);
+        alert(data.message || `已成功將身分調整為 ${roleName}！`);
         fetchUsers();
         fetchStorageStatus();
+        fetchStorageOverview();
       } else {
         alert(data.message || '操作失敗');
       }
@@ -1298,19 +1313,31 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                     <td className="px-6 py-4 text-right">
                       {!isSuper ? (
                         <div className="flex items-center justify-end space-x-1.5">
-                          {/* 經銷商專屬：停用/恢復經銷權限 */}
+                          {/* 經銷商專屬操作 */}
                           {isReseller ? (
-                            <button
-                              onClick={() => handleToggleReseller(u.email)}
-                              className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center space-x-1 shrink-0 whitespace-nowrap border ${
-                                u.isResellerDisabled
-                                  ? 'bg-emerald-950 text-emerald-300 border-emerald-800 hover:bg-emerald-900 shadow-sm'
-                                  : 'bg-red-950/80 text-red-300 border-red-800/80 hover:bg-red-900 shadow-sm'
-                              }`}
-                              title={u.isResellerDisabled ? '恢復該用戶的經銷商權限 (允許派發新配額與客戶)' : '停用該經銷商代理權限 (保留帳號但凍結派發功能)'}
-                            >
-                              <span>{u.isResellerDisabled ? '恢復經銷權' : '停用經銷權'}</span>
-                            </button>
+                            <>
+                              {/* 停用 / 恢復經銷權 */}
+                              <button
+                                onClick={() => handleToggleReseller(u.email)}
+                                className={`px-2 py-1 rounded-lg text-[11px] font-bold transition flex items-center space-x-1 shrink-0 whitespace-nowrap border ${
+                                  u.isResellerDisabled
+                                    ? 'bg-emerald-950 text-emerald-300 border-emerald-800 hover:bg-emerald-900 shadow-sm'
+                                    : 'bg-red-950/80 text-red-300 border-red-800/80 hover:bg-red-900 shadow-sm'
+                                }`}
+                                title={u.isResellerDisabled ? '恢復該用戶的經銷商權限 (允許派發新配額與客戶)' : '停用該經銷商代理權限 (保留帳號但凍結派發功能)'}
+                              >
+                                <span>{u.isResellerDisabled ? '恢復經銷權' : '停用經銷權'}</span>
+                              </button>
+
+                              {/* 撤銷經銷商身分 (降為普通客戶) */}
+                              <button
+                                onClick={() => handleChangeRole(u.email, 'USER')}
+                                className="px-2 py-1 rounded-lg bg-orange-950/70 text-orange-300 border border-orange-800/80 hover:bg-orange-900 text-[11px] font-medium transition shrink-0 whitespace-nowrap shadow-sm"
+                                title="完全撤銷經銷商身分，將其降級為普通客戶 (移出經銷代理商名單)"
+                              >
+                                <span>降為普通客戶</span>
+                              </button>
+                            </>
                           ) : (
                             <button
                               onClick={() => handleChangeRole(u.email, 'RESELLER')}
@@ -1358,11 +1385,11 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                             {isSuspended ? <Unlock className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
                           </button>
 
-                          {/* 刪除 */}
+                          {/* 徹底刪除帳號 (含機器人) */}
                           <button
-                            onClick={() => handleDelete(u.email)}
-                            className="p-1.5 rounded-lg bg-gray-800 hover:bg-red-900/50 text-gray-400 hover:text-red-400 transition shrink-0"
-                            title="移除此授權"
+                            onClick={() => handleDelete(u.email, isReseller)}
+                            className="p-1.5 rounded-lg bg-red-950/40 hover:bg-red-900/80 text-red-400 hover:text-red-200 border border-red-900/50 transition shrink-0"
+                            title={isReseller ? '徹底刪除此經銷商帳號 (連同其所有託管機器人與雲端紀錄)' : '徹底刪除此帳號 (連同其所有託管機器人)'}
                           >
                             <Trash2 className="w-3.5 h-3.5 shrink-0" />
                           </button>
