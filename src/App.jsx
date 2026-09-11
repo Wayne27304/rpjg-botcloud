@@ -29,7 +29,11 @@ import {
   Globe,
   Eye,
   ShieldAlert,
-  Radio
+  Radio,
+  MoreVertical,
+  X,
+  Download,
+  Image as ImageIcon
 } from 'lucide-react';
 
 import Login from './components/Login';
@@ -50,6 +54,8 @@ export default function App() {
   // 主頁面導航狀態：'dashboard' | 'auth_management' | 'reseller_portal'
   const [currentView, setCurrentView] = useState('dashboard');
   const [isGlobalAuditOpen, setIsGlobalAuditOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isWallpaperModalOpen, setIsWallpaperModalOpen] = useState(false);
 
   const [bots, setBots] = useState([]);
   const [selectedBotId, setSelectedBotId] = useState(null);
@@ -334,38 +340,82 @@ export default function App() {
   const onlineCount = bots.filter(b => b.status === 'ONLINE').length;
 
   return (
-    <div className="min-h-screen bg-discord-darkest flex flex-col">
+    <div className="min-h-screen bg-discord-darkest flex flex-col relative selection:bg-discord-blurple selection:text-white overflow-x-hidden">
+      {/* 電腦與手機分開之專屬高畫質動態桌布 (Responsive Wallpapers) */}
+      <div
+        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-700 md:hidden opacity-30"
+        style={{ backgroundImage: "url('/wallpaper-mobile.jpg')" }}
+      />
+      <div
+        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-700 hidden md:block opacity-30"
+        style={{ backgroundImage: "url('/wallpaper-desktop.jpg')" }}
+      />
+      {/* 科技深色半透明遮罩，保證所有後台、表格、終端日誌文字清爽清晰 */}
+      <div className="fixed inset-0 pointer-events-none z-0 bg-[#0e0f11]/75 backdrop-blur-[1px]" />
+
       {/* 頂部導航欄 (Top Navigation Bar) */}
-      <header className="sticky top-0 z-40 bg-[#1e1f22]/90 backdrop-blur-md border-b border-[#2b2d31] px-4 lg:px-8 py-3">
+      <header className="sticky top-0 z-40 bg-[#1e1f22]/90 backdrop-blur-md border-b border-[#2b2d31] px-4 lg:px-8 py-3 relative z-10">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* 品牌標識區 */}
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={() => setCurrentView('dashboard')}>
-            <div className="p-2 rounded-xl bg-discord-blurple text-white shadow-lg shadow-discord-blurple/25">
-              <Bot className="w-6 h-6" />
+          <div className="flex items-center space-x-2.5 sm:space-x-3 cursor-pointer shrink-0" onClick={() => setCurrentView('dashboard')}>
+            <div className="p-2 rounded-xl bg-discord-blurple text-white shadow-lg shadow-discord-blurple/25 shrink-0">
+              <Bot className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <div className="flex items-center space-x-2">
-                <span className="font-extrabold text-white text-base lg:text-lg tracking-wide">
+              <div className="flex items-center space-x-1.5 sm:space-x-2">
+                <span className="font-extrabold text-white text-sm sm:text-base lg:text-lg tracking-wide whitespace-nowrap">
                   RPJG BotCloud
                 </span>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 whitespace-nowrap">
                   作者：R.P.J.G 開發部門
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400 hidden sm:block">
+              <p className="text-[11px] text-gray-400 hidden lg:block">
                 Discord Bot 雲端線上託管 • 自訂專案上傳
               </p>
             </div>
           </div>
 
-          {/* 右側導航按鈕與使用者狀態 */}
-          <div className="flex items-center space-x-3">
+          {/* 手機專屬功能列：上傳快捷鍵 與 側邊三個點功能選單 (Mobile Navigation Controls) */}
+          <div className="flex md:hidden items-center space-x-2 shrink-0">
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-discord-blurple hover:bg-discord-blurple-hover text-white transition shadow-md shadow-discord-blurple/30"
+              title="上傳機器人"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>上傳</span>
+            </button>
+
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 rounded-xl bg-[#2b2d31] hover:bg-gray-700 text-gray-200 transition border border-[#35373c] flex items-center justify-center shadow-sm"
+              title="展開功能選單"
+              aria-label="功能選單"
+            >
+              <MoreVertical className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* 電腦專屬完整導航按鈕與狀態 (Desktop Full Navigation Controls) */}
+          <div className="hidden md:flex items-center space-x-3">
             {/* 節點狀態 Pill */}
-            <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-[#141517] border border-[#2b2d31] text-xs">
+            <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-[#141517] border border-[#2b2d31] text-xs">
               <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`}></div>
               <span className="text-gray-300 font-mono">RPJG-TW-01</span>
               <span className="text-emerald-400 font-mono text-[11px]">{telemetry.ping}ms</span>
             </div>
+
+            {/* 下載專屬桌布按鈕 */}
+            <a
+              href="/wallpaper-desktop.jpg"
+              download="RPJG-Desktop-Wallpaper.jpg"
+              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#2b2d31] hover:bg-gray-700 text-cyan-300 border border-cyan-500/30 transition"
+              title="下載電腦版 16:9 4K 官方專屬桌布"
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              <span>下載桌布</span>
+            </a>
 
             {/* 全域日誌與審計按鈕 (Super Admin 或 經銷代理商) */}
             {(isSuperAdmin || currentUser?.role === 'RESELLER') && (
@@ -445,7 +495,7 @@ export default function App() {
 
             {/* 使用者身分卡片與登出 */}
             <div className="flex items-center space-x-2 pl-2 border-l border-gray-700">
-              <div className="flex flex-col text-right max-w-[140px] sm:max-w-none truncate">
+              <div className="flex flex-col text-right max-w-[140px] truncate">
                 <span className="text-xs font-bold text-white font-mono truncate">
                   {currentUser.displayName || currentUser.email}
                 </span>
@@ -466,8 +516,8 @@ export default function App() {
       </header>
 
       {/* 全域 Telemetry 數據橫幅 */}
-      <div className="bg-[#141517] border-b border-[#2b2d31] px-4 lg:px-8 py-2 text-xs">
-        <div className="max-w-7xl mx-auto flex items-center justify-between text-gray-400 overflow-x-auto gap-4">
+      <div className="bg-[#141517]/90 backdrop-blur-sm border-b border-[#2b2d31] px-4 lg:px-8 py-2 text-xs relative z-10">
+        <div className="max-w-7xl mx-auto flex items-center justify-between text-gray-400 overflow-x-auto gap-4 whitespace-nowrap scrollbar-none">
           <div className="flex items-center space-x-6 shrink-0">
             <div className="flex items-center space-x-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
@@ -523,7 +573,7 @@ export default function App() {
       </div>
 
       {/* 主內容區域 */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 lg:p-6 relative z-10">
         {currentView === 'auth_management' && isSuperAdmin ? (
           /* 管理員專屬：授權中心畫面 */
           <div className="space-y-4">
@@ -557,16 +607,16 @@ export default function App() {
             <div className="lg:col-span-4 flex flex-col space-y-4">
               {/* 管理員全站機器人檢視切換欄 */}
               {isSuperAdmin && (
-                <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#1e1f22] border border-[#2b2d31]">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-2.5 rounded-xl bg-[#1e1f22]/90 backdrop-blur-sm border border-[#2b2d31] gap-2">
                   <div className="flex items-center space-x-2">
-                    <Radio className={`w-3.5 h-3.5 ${showAllBots ? 'text-amber-400 animate-pulse' : 'text-gray-500'}`} />
-                    <span className="text-xs text-gray-300 font-medium">
+                    <Radio className={`w-3.5 h-3.5 shrink-0 ${showAllBots ? 'text-amber-400 animate-pulse' : 'text-gray-500'}`} />
+                    <span className="text-xs text-gray-300 font-medium truncate">
                       視角：{showAllBots ? <span className="text-amber-300 font-bold">全站所有機器人 ({bots.length})</span> : <span className="text-gray-400">僅我的機器人 ({bots.length})</span>}
                     </span>
                   </div>
                   <button
                     onClick={() => setShowAllBots(!showAllBots)}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition flex items-center space-x-1 ${
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition flex items-center space-x-1 shrink-0 self-start sm:self-auto ${
                       showAllBots
                         ? 'bg-amber-500 hover:bg-amber-400 text-black shadow'
                         : 'bg-[#2b2d31] hover:bg-gray-700 text-gray-300 border border-gray-600'
@@ -1014,7 +1064,7 @@ export default function App() {
         )}
       </main>
 
-      <footer className="mt-auto bg-[#141517] border-t border-[#2b2d31] py-4 px-6 text-center text-xs text-gray-500">
+      <footer className="mt-auto bg-[#141517]/95 backdrop-blur-md border-t border-[#2b2d31] py-4 px-6 text-center text-xs text-gray-500 relative z-10">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <div>
             <span>© 2026 RPJG BotCloud | 由 </span>
@@ -1030,6 +1080,198 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* 手機專屬側邊三個點導航與設定抽屜 (Mobile Three-Dots Drawer Menu) */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex justify-end">
+          {/* 背景遮罩 */}
+          <div
+            className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+            onClick={() => setIsMobileMenuOpen(false)}
+          />
+
+          {/* 側邊抽屜面板 */}
+          <div className="relative w-4/5 max-w-xs sm:max-w-sm bg-[#1e1f22] border-l border-[#2b2d31] h-full overflow-y-auto shadow-2xl p-5 flex flex-col justify-between z-10 animate-in slide-in-from-right duration-300">
+            <div className="space-y-4">
+              {/* 頂部標題與關閉按鈕 */}
+              <div className="flex items-center justify-between pb-3 border-b border-[#2b2d31]">
+                <div className="flex items-center space-x-2">
+                  <div className="p-1.5 rounded-lg bg-discord-blurple text-white shadow-md shadow-discord-blurple/30">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                  <span className="font-bold text-white text-sm">功能導航與設定</span>
+                </div>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-1.5 rounded-lg bg-[#2b2d31] hover:bg-gray-700 text-gray-400 hover:text-white transition"
+                  title="關閉選單"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* 使用者身分與額度卡片 */}
+              <div className="p-3.5 rounded-xl bg-[#141517] border border-[#2b2d31] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 min-w-0">
+                    <User className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                    <span className="text-xs font-bold text-white font-mono truncate">
+                      {currentUser.displayName || currentUser.email}
+                    </span>
+                  </div>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                    isSuperAdmin ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                    currentUser?.role === 'RESELLER' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                    'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  }`}>
+                    {isSuperAdmin ? '最高主管' : currentUser?.role === 'RESELLER' ? '經銷商' : '買家客戶'}
+                  </span>
+                </div>
+
+                <div className="text-[11px] text-gray-400 flex items-center justify-between font-mono">
+                  <span>授權效期</span>
+                  <span className="text-emerald-400">
+                    {currentUser.expiresAt ? new Date(currentUser.expiresAt).toLocaleDateString('zh-TW') : '永久授權'}
+                  </span>
+                </div>
+
+                {/* 空間容量進度條 */}
+                <div className="space-y-1 pt-1 border-t border-gray-800">
+                  <div className="flex items-center justify-between text-[10px] text-gray-400 font-mono">
+                    <span>儲存空間</span>
+                    <span>{currentUser.usedStorageMB || 0} / {currentUser.maxStorageMB || 100} MB</span>
+                  </div>
+                  <div className="w-full bg-[#1e1f22] h-1.5 rounded-full overflow-hidden">
+                    <div
+                      className="bg-indigo-500 h-full rounded-full"
+                      style={{ width: `${Math.min(100, currentUser.storageUsagePercent || 5)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 導航功能清單 */}
+              <div className="space-y-1.5 pt-1">
+                <button
+                  onClick={() => { setCurrentView('dashboard'); setIsMobileMenuOpen(false); }}
+                  className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                    currentView === 'dashboard'
+                      ? 'bg-discord-blurple text-white font-bold shadow-md shadow-discord-blurple/30'
+                      : 'bg-[#141517] text-gray-300 hover:bg-gray-800'
+                  }`}
+                >
+                  <Bot className="w-4 h-4" />
+                  <span>機器人主控台 (Dashboard)</span>
+                </button>
+
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => { setCurrentView('auth_management'); setIsMobileMenuOpen(false); }}
+                    className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                      currentView === 'auth_management'
+                        ? 'bg-amber-500 text-black font-black shadow-md shadow-amber-500/30'
+                        : 'bg-amber-500/10 text-amber-300 border border-amber-500/25 hover:bg-amber-500/20'
+                    }`}
+                  >
+                    <Award className="w-4 h-4" />
+                    <span>主管授權管理中心</span>
+                  </button>
+                )}
+
+                {currentUser?.role === 'RESELLER' && (
+                  <button
+                    onClick={() => { setCurrentView('reseller_portal'); setIsMobileMenuOpen(false); }}
+                    className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                      currentView === 'reseller_portal'
+                        ? 'bg-amber-500 text-black font-black shadow-md shadow-amber-500/30'
+                        : 'bg-amber-500/10 text-amber-300 border border-amber-500/25 hover:bg-amber-500/20'
+                    }`}
+                  >
+                    <Award className="w-4 h-4" />
+                    <span>經銷代理商管理後台</span>
+                  </button>
+                )}
+
+                {(isSuperAdmin || currentUser?.role === 'RESELLER') && (
+                  <button
+                    onClick={() => { setIsGlobalAuditOpen(true); setIsMobileMenuOpen(false); }}
+                    className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#141517] text-indigo-300 hover:bg-indigo-950/40 border border-indigo-500/20 transition"
+                  >
+                    <Activity className="w-4 h-4" />
+                    <span>全域操作與日誌審計</span>
+                  </button>
+                )}
+
+                {isSuperAdmin && currentView === 'dashboard' && (
+                  <button
+                    onClick={() => { setShowAllBots(!showAllBots); setIsMobileMenuOpen(false); }}
+                    className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold bg-[#141517] text-purple-300 hover:bg-gray-800 border border-purple-500/20 transition"
+                  >
+                    <Globe className="w-4 h-4 text-purple-400" />
+                    <span>{showAllBots ? '切換為：僅顯示我託管的 Bot' : '切換為：全站所有 Bot 視角'}</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => { setIsUploadModalOpen(true); setIsMobileMenuOpen(false); }}
+                  className="w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold bg-discord-blurple/20 text-discord-blurple hover:bg-discord-blurple/30 border border-discord-blurple/40 transition"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>上傳自訂 Bot 專案</span>
+                </button>
+              </div>
+
+              {/* 官方專屬高畫質桌布下載卡片 (手機/電腦分開) */}
+              <div className="p-3.5 rounded-xl bg-[#141517] border border-[#2b2d31] space-y-2">
+                <div className="flex items-center space-x-1.5 text-xs font-bold text-gray-300">
+                  <ImageIcon className="w-4 h-4 text-cyan-400" />
+                  <span>官方機器人專屬桌布</span>
+                </div>
+                <p className="text-[11px] text-gray-400 leading-relaxed">
+                  系統已為電腦 (16:9) 與手機 (9:16) 配置專屬 Cyberpunk 霓虹桌布。
+                </p>
+                <div className="flex gap-2 pt-1">
+                  <a
+                    href="/wallpaper-mobile.jpg"
+                    download="RPJG-Mobile-Wallpaper.jpg"
+                    className="flex-1 py-1.5 px-2 rounded-lg bg-[#1e1f22] hover:bg-gray-700 text-cyan-300 text-[11px] font-bold text-center border border-cyan-500/30 flex items-center justify-center space-x-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>手機桌布</span>
+                  </a>
+                  <a
+                    href="/wallpaper-desktop.jpg"
+                    download="RPJG-Desktop-Wallpaper.jpg"
+                    className="flex-1 py-1.5 px-2 rounded-lg bg-[#1e1f22] hover:bg-gray-700 text-indigo-300 text-[11px] font-bold text-center border border-indigo-500/30 flex items-center justify-center space-x-1"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>電腦桌布</span>
+                  </a>
+                </div>
+              </div>
+
+              <button
+                onClick={() => { setIsAboutModalOpen(true); setIsMobileMenuOpen(false); }}
+                className="w-full flex items-center space-x-2 px-3 py-2 rounded-xl text-xs text-gray-400 hover:text-white bg-[#141517] hover:bg-gray-800 transition"
+              >
+                <Info className="w-4 h-4 text-indigo-400" />
+                <span>關於 RPJG BotCloud</span>
+              </button>
+            </div>
+
+            {/* 底部登出按鈕 */}
+            <div className="pt-4 border-t border-[#2b2d31]">
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center space-x-2 px-4 py-2.5 rounded-xl bg-red-900/20 hover:bg-red-900/40 text-red-400 text-xs font-bold transition border border-red-800/40"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>登出當前帳號</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 模態彈窗組件 */}
       <UploadBotModal
