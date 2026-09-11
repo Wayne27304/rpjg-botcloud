@@ -18,8 +18,49 @@ const GAS_CODE = `/**
  * 解決 Render / 雲端伺服器免費版封鎖 SMTP 465/587 埠口之問題
  * 官方維護：R.P.J.G 開發部門
  */
+
+// 1. 處理瀏覽器直接打開網址 (GET 請求) - 解決「找不到以下指示函式：doGet」
+function doGet(e) {
+  var testParam = (e && e.parameter && e.parameter.test) ? e.parameter.test : '';
+  
+  // 若網址後方帶有 ?test=1 或 ?test=your_email@gmail.com 即可在瀏覽器直接觸發測試信
+  if (testParam) {
+    try {
+      var target = (testParam === '1' || testParam === 'true') ? Session.getActiveUser().getEmail() : testParam;
+      GmailApp.sendEmail(target, '【RPJG BotCloud】Google 轉發連線測試成功', '主管您好！恭喜您的 Google Apps Script 轉發引擎已成功上線，可正常由 Gmail 發送郵件。');
+      return ContentService.createTextOutput(JSON.stringify({
+        success: true,
+        message: '測試成功！已成功寄出一封測試信至 ' + target,
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    } catch (err) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        message: '測試寄信失敗: ' + err.toString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+  }
+
+  // 瀏覽器直接點開網址時顯示連線成功狀態
+  return ContentService.createTextOutput(JSON.stringify({
+    success: true,
+    status: 'ONLINE',
+    engine: 'RPJG BotCloud Gmail Relay Engine',
+    message: '🎉 服務連線正常！轉發引擎已在線就緒。請將此網址複製並貼回 RPJG BotCloud 後台【Gmail 郵件設定】即可自動發信！',
+    tip: '若要直接在瀏覽器測試發信，可在網址後方加上 ?test=1'
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 2. 處理伺服器端發信指令 (POST 請求)
 function doPost(e) {
   try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        message: '未接收到 POST 資料內容'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var data = JSON.parse(e.postData.contents);
     
     // 安全驗證金鑰
@@ -31,6 +72,13 @@ function doPost(e) {
     }
 
     var recipient = data.to;
+    if (!recipient) {
+      return ContentService.createTextOutput(JSON.stringify({
+        success: false,
+        message: '未指定收件者 Email'
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
     var subject = data.subject || '【RPJG BotCloud】系統通知';
     var body = data.text || '';
     var htmlBody = data.html || '';
@@ -304,6 +352,9 @@ export default function EmailSettingsModal({ isOpen, onClose, currentUser }) {
                 </li>
                 <li>
                   點擊「部署」並授予 Gmail 發信用權限，將生成的「<strong>網頁應用程式網址</strong>」複製貼回上方輸入框並儲存！
+                  <div className="text-[11px] text-amber-300/90 mt-1 pl-1">
+                    💡 提示：若您直接在瀏覽器分頁開啟該網址，會顯示 <code>ONLINE</code> 正常就緒狀態（亦可在網址後加上 <code>?test=1</code> 直接測試寄信）。
+                  </div>
                 </li>
               </ol>
             </div>
