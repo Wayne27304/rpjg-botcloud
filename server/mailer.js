@@ -16,47 +16,80 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 
 class MailerService {
   constructor() {
-    this.transporter = null;
-    this.initTransporter();
+    this.fallbackUser = 'ryanryan311311@gmail.com';
+    this.fallbackPass = 'eztq xvot cdwk ehnp';
   }
 
-  initTransporter() {
-    const rawUser = process.env.GMAIL_USER || process.env.SMTP_USER || 'ryanryan311311@gmail.com';
-    const rawPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || 'eztq xvot cdwk ehnp';
+  getCredentials() {
+    const rawUser = process.env.GMAIL_USER || process.env.SMTP_USER || this.fallbackUser;
+    const rawPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || this.fallbackPass;
 
-    const gmailUser = rawUser.trim();
-    const gmailPass = rawPass.replace(/\s+/g, '').trim();
-
-    if (gmailUser && gmailPass) {
-      this.transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          user: gmailUser,
-          pass: gmailPass
-        }
-      });
-      console.log(`[RPJG-MAIL] 🟢 Gmail SMTP 郵件引擎已就緒，寄件者: ${gmailUser}`);
-    } else {
-      console.log(`[RPJG-MAIL] 🟡 未偵測到 GMAIL_APP_PASSWORD，系統已啟用「虛擬模擬寄信」模式 (開通帳號時將直接在後台顯示帳密)`);
-      this.transporter = null;
-    }
+    const user = (rawUser || '').trim();
+    const pass = (rawPass || '').replace(/\s+/g, '').trim();
+    return { user, pass };
   }
 
   isConfigured() {
-    return !!this.transporter;
+    const { user, pass } = this.getCredentials();
+    return !!(user && pass);
   }
 
-  // 測試連線
-  async verifyConnection() {
-    if (!this.transporter) {
-      return { success: false, message: '尚未在 Render 環境變數設定 GMAIL_USER 與 GMAIL_APP_PASSWORD' };
+  // 取得獨立且全新的 SMTP 連線實例 (避免 Socket 閒置斷線逾時問題)
+  getTransporter() {
+    const { user, pass } = this.getCredentials();
+    if (!user || !pass) return null;
+
+    return nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: { user, pass },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+  }
+
+  // 測試連線與發送測試信 (提供給管理介面一鍵測試)
+  async testConnection(targetEmail) {
+    const { user } = this.getCredentials();
+    const transporter = this.getTransporter();
+
+    if (!transporter) {
+      return { success: false, message: '尚未配置 Gmail 寄件帳號與應用程式密碼' };
     }
+
+    const cleanTarget = (targetEmail || user || 'ryanryan311311@gmail.com').trim().toLowerCase();
     try {
-      await this.transporter.verify();
-      return { success: true, message: 'Gmail SMTP 連線成功！' };
+      await transporter.verify();
+      const info = await transporter.sendMail({
+        from: `"R.P.J.G 開發部門" <${user}>`,
+        to: cleanTarget,
+        subject: '【RPJG BotCloud】Gmail SMTP 發信測試成功',
+        text: '這是一封來自 RPJG BotCloud 的自動發信測試，代表您的 Gmail 寄件設定完全正常！',
+        html: `
+          <div style="font-family: sans-serif; padding: 24px; background: #1e1f22; color: #f2f3f5; border-radius: 12px; border: 1px solid #35373c;">
+            <h2 style="color: #5865F2; margin-top: 0;">🎉 RPJG BotCloud - Gmail 連線測試成功</h2>
+            <p>主管您好！您的 Gmail SMTP 自動發信功能運作一切正常。</p>
+            <p>系統日後在您授權經銷代理商或開通客戶帳號時，會自動以此信箱（${user}）寄送認證信件！</p>
+            <hr style="border: 0; border-top: 1px solid #35373c; margin: 20px 0;" />
+            <p style="font-size: 11px; color: #949ba4;">測試時間：${new Date().toLocaleString('zh-TW')} • R.P.J.G 開發部門</p>
+          </div>
+        `
+      });
+      console.log(`[RPJG-MAIL-TEST] ✅ 測試信已寄出至 ${cleanTarget} (MessageID: ${info.messageId})`);
+      return { success: true, message: `測試信已成功寄送至 ${cleanTarget}！`, messageId: info.messageId };
     } catch (err) {
-      return { success: false, message: `Gmail 連線驗證失敗: ${err.message}` };
+      console.error('[RPJG-MAIL-TEST] ❌ 測試發信失敗:', err.message);
+      return { success: false, message: `發信失敗: ${err.message}` };
     }
+  }
+
+  async verifyConnection() {
+    return this.testConnection();
   }
 
   /**
@@ -80,7 +113,10 @@ class MailerService {
 
     console.log(`[RPJG-MAIL] 📨 正在處理 [${roleLabel}] 開通信件 ➜ ${cleanEmail}`);
 
-    if (!this.transporter) {
+    const { user } = this.getCredentials();
+    const transporter = this.getTransporter();
+
+    if (!transporter) {
       console.log(`[RPJG-MAIL 模擬記錄] 目標: ${cleanEmail} | 密碼: ${plainPassword} | 角色: ${roleLabel} | 配額: ${maxStorageMB}MB`);
       return {
         success: false,
@@ -175,9 +211,8 @@ class MailerService {
     `;
 
     try {
-      const sender = process.env.GMAIL_USER || 'RPJG BotCloud <noreply@rpjg.cloud>';
-      const info = await this.transporter.sendMail({
-        from: `"R.P.J.G 開發部門" <${sender}>`,
+      const info = await transporter.sendMail({
+        from: `"R.P.J.G 開發部門" <${user}>`,
         to: cleanEmail,
         subject: `【RPJG BotCloud】您的 ${isReseller ? '代理商' : '機器人託管'} 帳號已開通成功 (內附登入密碼)`,
         html: htmlContent

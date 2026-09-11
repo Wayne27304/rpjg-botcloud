@@ -285,9 +285,13 @@ app.get('/api/admin/audit-logs', requireAuth, (req, res) => {
 
 // 管理員：測試 Gmail SMTP 發信連線
 app.post('/api/admin/test-email', requireAuth, requireSuperAdmin, async (req, res) => {
-  const { targetEmail } = req.body;
-  const result = await mailerService.testConnection(targetEmail || req.user.email);
-  res.json(result);
+  try {
+    const { targetEmail } = req.body;
+    const result = await mailerService.testConnection(targetEmail || req.user.email);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, message: `發信異常: ${err.message}` });
+  }
 });
 
 // 管理員：調配特定使用者的空間配額與機器人數量
