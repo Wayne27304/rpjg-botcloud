@@ -31,9 +31,7 @@ import {
   ShieldAlert,
   Radio,
   MoreVertical,
-  X,
-  Download,
-  Image as ImageIcon
+  X
 } from 'lucide-react';
 
 import Login from './components/Login';
@@ -340,37 +338,25 @@ export default function App() {
   const onlineCount = bots.filter(b => b.status === 'ONLINE').length;
 
   return (
-    <div className="min-h-screen bg-discord-darkest flex flex-col relative selection:bg-discord-blurple selection:text-white overflow-x-hidden">
-      {/* 電腦與手機分開之專屬高畫質動態桌布 (Responsive Wallpapers) */}
-      <div
-        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-700 md:hidden opacity-30"
-        style={{ backgroundImage: "url('/wallpaper-mobile.jpg')" }}
-      />
-      <div
-        className="fixed inset-0 pointer-events-none z-0 bg-cover bg-center bg-no-repeat transition-opacity duration-700 hidden md:block opacity-30"
-        style={{ backgroundImage: "url('/wallpaper-desktop.jpg')" }}
-      />
-      {/* 科技深色半透明遮罩，保證所有後台、表格、終端日誌文字清爽清晰 */}
-      <div className="fixed inset-0 pointer-events-none z-0 bg-[#0e0f11]/75 backdrop-blur-[1px]" />
-
+    <div className="min-h-screen bg-discord-darkest flex flex-col">
       {/* 頂部導航欄 (Top Navigation Bar) */}
-      <header className="sticky top-0 z-40 bg-[#1e1f22]/90 backdrop-blur-md border-b border-[#2b2d31] px-4 lg:px-8 py-3 relative z-10">
+      <header className="sticky top-0 z-40 bg-[#1e1f22]/90 backdrop-blur-md border-b border-[#2b2d31] px-4 lg:px-8 py-3">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           {/* 品牌標識區 */}
-          <div className="flex items-center space-x-2.5 sm:space-x-3 cursor-pointer shrink-0" onClick={() => setCurrentView('dashboard')}>
-            <div className="p-2 rounded-xl bg-discord-blurple text-white shadow-lg shadow-discord-blurple/25 shrink-0">
-              <Bot className="w-5 h-5 sm:w-6 sm:h-6" />
+          <div className="flex items-center space-x-3 cursor-pointer shrink-0" onClick={() => setCurrentView('dashboard')}>
+            <div className="p-2 rounded-xl bg-discord-blurple text-white shadow-lg shadow-discord-blurple/25">
+              <Bot className="w-6 h-6" />
             </div>
             <div>
-              <div className="flex items-center space-x-1.5 sm:space-x-2">
-                <span className="font-extrabold text-white text-sm sm:text-base lg:text-lg tracking-wide whitespace-nowrap">
+              <div className="flex items-center space-x-2">
+                <span className="font-extrabold text-white text-base lg:text-lg tracking-wide whitespace-nowrap">
                   RPJG BotCloud
                 </span>
                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 whitespace-nowrap">
                   作者：R.P.J.G 開發部門
                 </span>
               </div>
-              <p className="text-[11px] text-gray-400 hidden lg:block">
+              <p className="text-[11px] text-gray-400 hidden sm:block">
                 Discord Bot 雲端線上託管 • 自訂專案上傳
               </p>
             </div>
@@ -380,11 +366,11 @@ export default function App() {
           <div className="flex md:hidden items-center space-x-2 shrink-0">
             <button
               onClick={() => setIsUploadModalOpen(true)}
-              className="flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-discord-blurple hover:bg-discord-blurple-hover text-white transition shadow-md shadow-discord-blurple/30"
+              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-discord-blurple hover:bg-discord-blurple-hover text-white transition shadow-md shadow-discord-blurple/30"
               title="上傳機器人"
             >
               <Upload className="w-3.5 h-3.5" />
-              <span>上傳</span>
+              <span>上傳建立 Bot</span>
             </button>
 
             <button
@@ -405,17 +391,6 @@ export default function App() {
               <span className="text-gray-300 font-mono">RPJG-TW-01</span>
               <span className="text-emerald-400 font-mono text-[11px]">{telemetry.ping}ms</span>
             </div>
-
-            {/* 下載專屬桌布按鈕 */}
-            <a
-              href="/wallpaper-desktop.jpg"
-              download="RPJG-Desktop-Wallpaper.jpg"
-              className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-[#2b2d31] hover:bg-gray-700 text-cyan-300 border border-cyan-500/30 transition"
-              title="下載電腦版 16:9 4K 官方專屬桌布"
-            >
-              <ImageIcon className="w-3.5 h-3.5" />
-              <span>下載桌布</span>
-            </a>
 
             {/* 全域日誌與審計按鈕 (Super Admin 或 經銷代理商) */}
             {(isSuperAdmin || currentUser?.role === 'RESELLER') && (
@@ -1221,34 +1196,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* 官方專屬高畫質桌布下載卡片 (手機/電腦分開) */}
-              <div className="p-3.5 rounded-xl bg-[#141517] border border-[#2b2d31] space-y-2">
-                <div className="flex items-center space-x-1.5 text-xs font-bold text-gray-300">
-                  <ImageIcon className="w-4 h-4 text-cyan-400" />
-                  <span>官方機器人專屬桌布</span>
-                </div>
-                <p className="text-[11px] text-gray-400 leading-relaxed">
-                  系統已為電腦 (16:9) 與手機 (9:16) 配置專屬 Cyberpunk 霓虹桌布。
-                </p>
-                <div className="flex gap-2 pt-1">
-                  <a
-                    href="/wallpaper-mobile.jpg"
-                    download="RPJG-Mobile-Wallpaper.jpg"
-                    className="flex-1 py-1.5 px-2 rounded-lg bg-[#1e1f22] hover:bg-gray-700 text-cyan-300 text-[11px] font-bold text-center border border-cyan-500/30 flex items-center justify-center space-x-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>手機桌布</span>
-                  </a>
-                  <a
-                    href="/wallpaper-desktop.jpg"
-                    download="RPJG-Desktop-Wallpaper.jpg"
-                    className="flex-1 py-1.5 px-2 rounded-lg bg-[#1e1f22] hover:bg-gray-700 text-indigo-300 text-[11px] font-bold text-center border border-indigo-500/30 flex items-center justify-center space-x-1"
-                  >
-                    <Download className="w-3 h-3" />
-                    <span>電腦桌布</span>
-                  </a>
-                </div>
-              </div>
 
               <button
                 onClick={() => { setIsAboutModalOpen(true); setIsMobileMenuOpen(false); }}
