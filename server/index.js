@@ -15,6 +15,8 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import { botManager } from './botManager.js';
 import { authManager, SUPER_ADMIN_EMAIL } from './authManager.js';
+import { auditLogger } from './auditLogger.js';
+import { mailerService } from './mailer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,6 +100,18 @@ const requireSuperAdmin = (req, res, next) => {
   next();
 };
 
+const requireResellerOrAdmin = (req, res, next) => {
+  if (
+    req.user &&
+    (req.user.role === 'RESELLER' ||
+     req.user.role === 'SUPER_ADMIN' ||
+     req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase())
+  ) {
+    return next();
+  }
+  return res.status(403).json({ success: false, message: '權限不足：僅代理經銷商或最高管理員可操作' });
+};
+
 const checkBotAccess = (req, res, next) => {
   const botId = req.params.id;
   const bot = botManager.getBot(botId);
@@ -106,8 +120,17 @@ const checkBotAccess = (req, res, next) => {
   }
   const isSuperAdmin = req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
   const isOwner = bot.ownerEmail && bot.ownerEmail.toLowerCase() === req.user.email.toLowerCase();
-  if (!isSuperAdmin && !isOwner) {
-    return res.status(403).json({ success: false, message: '權限不足：您只能操作與檢視自己託管的機器人' });
+
+  let isResellerParent = false;
+  if (req.user.role === 'RESELLER' && bot.ownerEmail) {
+    const owner = authManager.getUser(bot.ownerEmail);
+    if (owner && (owner.parentResellerEmail || '').toLowerCase() === req.user.email.toLowerCase()) {
+      isResellerParent = true;
+    }
+  }
+
+  if (!isSuperAdmin && !isOwner && !isResellerParent) {
+    return res.status(403).json({ success: false, message: '權限不足：您只能操作與檢視自己或旗下客戶託管的機器人' });
   }
   req.targetBot = bot;
   next();
@@ -136,7 +159,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
     success: true,
     user: {
       email: req.user.email,
-      role: req.user.role,
+      role: req.user.role || 'USER',
       displayName: req.user.displayName,
       expiresAt: req.user.expiresAt,
       maxBots: req.user.maxBots || 5,
@@ -144,7 +167,11 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
       usedStorageMB: usage.totalMB,
       remainingStorageMB: Math.max(0, +(maxStorageMB - usage.totalMB).toFixed(2)),
       storageUsagePercent: maxStorageMB > 0 ? +((usage.totalMB / maxStorageMB) * 100).toFixed(1) : 0,
-      isSuperAdmin: req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase()
+      isSuperAdmin: req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase(),
+      resellerQuotaMB: req.user.resellerQuotaMB || 0,
+      resellerMaxBots: req.user.resellerMaxBots || 0,
+      resellerMaxUsers: req.user.resellerMaxUsers || 0,
+      parentResellerEmail: req.user.parentResellerEmail || null
     }
   });
 });
@@ -169,8 +196,53 @@ app.get('/api/auth/users', requireAuth, requireSuperAdmin, (req, res) => {
   res.json({ success: true, users: enriched });
 });
 
-// 管理員：授權新 Gmail 與期限 (支援派發儲存空間)
+// 管理員：授權新 Gmail 與期限 (支援派發儲存空間與經銷代理商權限)
 app.post('/api/auth/authorize', requireAuth, requireSuperAdmin, (req, res) => {
+  const {
+    email,
+    password,
+    durationType,
+    customDays,
+    maxBots,
+    maxStorageMB,
+    note,
+    displayName,
+    role,
+    resellerQuotaMB,
+    resellerMaxBots,
+    resellerMaxUsers
+  } = req.body;
+
+  if (!email) return res.status(400).json({ success: false, message: '缺少 Email' });
+
+  const result = authManager.authorizeUser({
+    email,
+    password,
+    durationType,
+    customDays,
+    maxBots,
+    maxStorageMB,
+    note,
+    displayName,
+    role: role || 'USER',
+    resellerQuotaMB,
+    resellerMaxBots,
+    resellerMaxUsers,
+    creatorUser: req.user
+  });
+  res.json(result);
+});
+
+// 經銷代理商：獲取代理配額總盤與旗下客戶清單
+app.get('/api/reseller/overview', requireAuth, requireResellerOrAdmin, (req, res) => {
+  const isSuperAdmin = req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+  const targetEmail = isSuperAdmin && req.query.email ? req.query.email : req.user.email;
+  const overview = authManager.getResellerOverview(targetEmail);
+  res.json({ success: true, ...overview });
+});
+
+// 經銷代理商：派發建立/更新客戶帳號 (自動扣除代理商可用總配額)
+app.post('/api/reseller/authorize', requireAuth, requireResellerOrAdmin, (req, res) => {
   const { email, password, durationType, customDays, maxBots, maxStorageMB, note, displayName } = req.body;
   if (!email) return res.status(400).json({ success: false, message: '缺少 Email' });
 
@@ -182,8 +254,39 @@ app.post('/api/auth/authorize', requireAuth, requireSuperAdmin, (req, res) => {
     maxBots,
     maxStorageMB,
     note,
-    displayName
+    displayName,
+    role: 'USER',
+    creatorUser: req.user
   });
+  res.json(result);
+});
+
+// 經銷代理商：移除自己旗下的客戶帳號
+app.delete('/api/reseller/users/:email', requireAuth, requireResellerOrAdmin, (req, res) => {
+  const result = authManager.deleteUser(req.params.email, req.user);
+  res.json(result);
+});
+
+// 全域操作審計日誌 (最高主管可查全部，經銷代理商可查旗下)
+app.get('/api/admin/audit-logs', requireAuth, (req, res) => {
+  const isSuperAdmin = req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+  if (isSuperAdmin) {
+    const logs = auditLogger.query(req.query);
+    return res.json({ success: true, logs });
+  } else if (req.user.role === 'RESELLER') {
+    const overview = authManager.getResellerOverview(req.user.email);
+    const subEmails = new Set([req.user.email.toLowerCase(), ...(overview.subUsers || []).map(u => u.email.toLowerCase())]);
+    let logs = auditLogger.query({ limit: 300 });
+    logs = logs.filter(l => subEmails.has(l.actor) || subEmails.has((l.target || '').toLowerCase()));
+    return res.json({ success: true, logs });
+  }
+  return res.status(403).json({ success: false, message: '權限不足' });
+});
+
+// 管理員：測試 Gmail SMTP 發信連線
+app.post('/api/admin/test-email', requireAuth, requireSuperAdmin, async (req, res) => {
+  const { targetEmail } = req.body;
+  const result = await mailerService.testConnection(targetEmail || req.user.email);
   res.json(result);
 });
 
@@ -219,7 +322,7 @@ app.post('/api/auth/users/:email/status', requireAuth, requireSuperAdmin, (req, 
 
 // 管理員：刪除授權帳號
 app.delete('/api/auth/users/:email', requireAuth, requireSuperAdmin, (req, res) => {
-  const result = authManager.deleteUser(req.params.email);
+  const result = authManager.deleteUser(req.params.email, req.user);
   res.json(result);
 });
 
@@ -287,11 +390,11 @@ app.get('/api/system/stats', (req, res) => {
    機器人管理 API (需登入驗證)
    ================================================================ */
 
-// 取得機器人清單 (按身分隔離；管理員可透過 ?all=true 切換全域所有機器人視角)
+// 取得機器人清單 (按身分隔離；管理員可透過 ?all=true 切換全域所有機器人視角；代理商可看自己與旗下客戶機器人)
 app.get('/api/bots', requireAuth, (req, res) => {
   const isSuperAdmin = req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
   const showAll = isSuperAdmin && req.query.all === 'true';
-  const bots = botManager.listBots(req.user.email, showAll);
+  const bots = botManager.listBots(req.user.email, showAll, req.user);
   res.json({ success: true, bots, isGlobalView: showAll });
 });
 
@@ -338,22 +441,22 @@ app.get('/api/bots/:id', requireAuth, checkBotAccess, (req, res) => {
 });
 
 app.delete('/api/bots/:id', requireAuth, checkBotAccess, (req, res) => {
-  const ok = botManager.deleteBot(req.params.id);
+  const ok = botManager.deleteBot(req.params.id, req.user.email);
   res.json({ success: ok });
 });
 
 app.post('/api/bots/:id/start', requireAuth, checkBotAccess, async (req, res) => {
-  const result = await botManager.startBot(req.params.id);
+  const result = await botManager.startBot(req.params.id, req.user.email);
   res.json(result);
 });
 
 app.post('/api/bots/:id/stop', requireAuth, checkBotAccess, (req, res) => {
-  const result = botManager.stopBot(req.params.id);
+  const result = botManager.stopBot(req.params.id, req.user.email);
   res.json(result);
 });
 
 app.post('/api/bots/:id/restart', requireAuth, checkBotAccess, async (req, res) => {
-  const result = await botManager.restartBot(req.params.id);
+  const result = await botManager.restartBot(req.params.id, req.user.email);
   res.json(result);
 });
 

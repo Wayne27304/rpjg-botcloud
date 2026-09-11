@@ -36,14 +36,17 @@ import EnvEditor from './components/EnvEditor';
 import MetricsPanel from './components/MetricsPanel';
 import UploadBotModal from './components/UploadBotModal';
 import AuthManagement from './components/AuthManagement';
+import ResellerPortal from './components/ResellerPortal';
+import GlobalAuditLogsModal from './components/GlobalAuditLogsModal';
 import AboutModal from './components/AboutModal';
 
 export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
-  // 主頁面導航狀態：'dashboard' | 'auth_management'
+  // 主頁面導航狀態：'dashboard' | 'auth_management' | 'reseller_portal'
   const [currentView, setCurrentView] = useState('dashboard');
+  const [isGlobalAuditOpen, setIsGlobalAuditOpen] = useState(false);
 
   const [bots, setBots] = useState([]);
   const [selectedBotId, setSelectedBotId] = useState(null);
@@ -361,6 +364,33 @@ export default function App() {
               <span className="text-emerald-400 font-mono text-[11px]">{telemetry.ping}ms</span>
             </div>
 
+            {/* 全域日誌與審計按鈕 (Super Admin 或 經銷代理商) */}
+            {(isSuperAdmin || currentUser?.role === 'RESELLER') && (
+              <button
+                onClick={() => setIsGlobalAuditOpen(true)}
+                className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 hover:bg-indigo-600/30 transition"
+                title="查看全域操作審計紀錄與遠端機器人 Console"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                <span>日誌與審計</span>
+              </button>
+            )}
+
+            {/* 經銷代理商專屬：代理後台切換按鈕 */}
+            {currentUser?.role === 'RESELLER' && (
+              <button
+                onClick={() => setCurrentView(currentView === 'reseller_portal' ? 'dashboard' : 'reseller_portal')}
+                className={`flex items-center space-x-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
+                  currentView === 'reseller_portal'
+                    ? 'bg-amber-500 text-black shadow-lg shadow-amber-500/30 font-black'
+                    : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'
+                }`}
+              >
+                <Crown className="w-4 h-4" />
+                <span>代理經銷後台</span>
+              </button>
+            )}
+
             {/* 管理員專屬：授權管理中心切換按鈕 */}
             {isSuperAdmin && (
               <button
@@ -502,7 +532,20 @@ export default function App() {
                 <span>← 返回機器人控制面板</span>
               </button>
             </div>
-            <AuthManagement currentUser={currentUser} />
+            <AuthManagement currentUser={currentUser} bots={bots} />
+          </div>
+        ) : currentView === 'reseller_portal' && (currentUser?.role === 'RESELLER' || isSuperAdmin) ? (
+          /* 經銷代理商專屬：代理後台畫面 */
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentView('dashboard')}
+                className="text-xs text-indigo-400 hover:underline flex items-center space-x-1 font-medium"
+              >
+                <span>← 返回機器人控制面板</span>
+              </button>
+            </div>
+            <ResellerPortal currentUser={currentUser} bots={bots} />
           </div>
         ) : (
           /* 機器人託管儀表板主畫面 */
@@ -979,6 +1022,13 @@ export default function App() {
       <AboutModal
         isOpen={isAboutModalOpen}
         onClose={() => setIsAboutModalOpen(false)}
+      />
+
+      <GlobalAuditLogsModal
+        isOpen={isGlobalAuditOpen}
+        onClose={() => setIsGlobalAuditOpen(false)}
+        currentUser={currentUser}
+        bots={bots}
       />
     </div>
   );

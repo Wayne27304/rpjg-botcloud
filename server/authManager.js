@@ -16,6 +16,8 @@ import { createClient } from '@supabase/supabase-js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '../.env') });
+import { mailerService } from './mailer.js';
+import { auditLogger } from './auditLogger.js';
 
 const DATA_DIR = path.join(__dirname, 'data');
 const USERS_FILE = path.join(DATA_DIR, 'users.json');
@@ -411,8 +413,22 @@ class AuthManager {
     return users.find(u => u.email.toLowerCase() === cleanEmail) || null;
   }
 
-  // 管理員授權新 Gmail 帳號 (包含派發空間設定)
-  authorizeUser({ email, password, durationType, customDays, maxBots, maxStorageMB, note, displayName }) {
+  // 管理員或代理商授權 Gmail 帳號 (包含派發空間、代理商配額與郵件發送)
+  authorizeUser({
+    email,
+    password,
+    durationType,
+    customDays,
+    maxBots,
+    maxStorageMB,
+    note,
+    displayName,
+    role = 'USER',
+    resellerQuotaMB,
+    resellerMaxBots,
+    resellerMaxUsers,
+    creatorUser = null
+  }) {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (!cleanEmail.includes('@')) {
       return { success: false, message: '請提供有效的 Gmail / Email 地址' };
@@ -438,17 +454,72 @@ class AuthManager {
     const existingIndex = users.findIndex(u => u.email.toLowerCase() === cleanEmail);
     const pwd = password || ('rpjg_' + Math.random().toString(36).substring(2, 8));
     const storageQuotaMB = Math.max(10, parseInt(maxStorageMB) || 100);
+    const requestedBots = Math.max(1, parseInt(maxBots) || 5);
     let targetUser = null;
+
+    // 檢查操作者是否為經銷代理商 (RESELLER)
+    const isActorReseller = creatorUser && creatorUser.role === 'RESELLER';
+    let parentResellerEmail = null;
+
+    if (isActorReseller) {
+      // 代理商只能建立普通客戶 (USER)
+      if (role === 'RESELLER') {
+        return { success: false, message: '代理商無法再建立二級代理商，僅最高主管可指派代理商！' };
+      }
+
+      // 檢查代理商本身配額
+      const subUsers = users.filter(u =>
+        (u.parentResellerEmail || '').toLowerCase() === creatorUser.email.toLowerCase() &&
+        u.email.toLowerCase() !== cleanEmail
+      );
+      const allocatedStorage = subUsers.reduce((s, u) => s + (u.maxStorageMB || 0), 0);
+      const allocatedBots = subUsers.reduce((s, u) => s + (u.maxBots || 0), 0);
+      const maxResellerQuota = creatorUser.resellerQuotaMB || 1000;
+      const maxResellerBots = creatorUser.resellerMaxBots || 10;
+      const maxResellerUsers = creatorUser.resellerMaxUsers || 10;
+
+      if (subUsers.length + 1 > maxResellerUsers) {
+        return {
+          success: false,
+          message: `已超出您的代理客戶數量上限 (上限 ${maxResellerUsers} 位)！請聯絡最高主管擴充。`
+        };
+      }
+      if (allocatedStorage + storageQuotaMB > maxResellerQuota) {
+        return {
+          success: false,
+          message: `代理空間配額不足！您總配額 ${maxResellerQuota} MB，目前已派發 ${allocatedStorage} MB，剩餘可用 ${Math.max(0, maxResellerQuota - allocatedStorage)} MB，欲派發 ${storageQuotaMB} MB 超出上限！`
+        };
+      }
+      if (allocatedBots + requestedBots > maxResellerBots) {
+        return {
+          success: false,
+          message: `代理機器人配額不足！您總配額 ${maxResellerBots} 台，已派發 ${allocatedBots} 台，剩餘可用 ${Math.max(0, maxResellerBots - allocatedBots)} 台！`
+        };
+      }
+
+      parentResellerEmail = creatorUser.email.toLowerCase();
+    }
+
+    const assignedRole = (isActorReseller || role !== 'RESELLER') ? 'USER' : 'RESELLER';
 
     if (existingIndex >= 0) {
       users[existingIndex].passwordHash = this.hashPassword(pwd);
       users[existingIndex].plainPasswordHint = pwd;
       users[existingIndex].expiresAt = expiresAt;
       users[existingIndex].status = 'ACTIVE';
-      users[existingIndex].maxBots = parseInt(maxBots) || 5;
+      users[existingIndex].maxBots = requestedBots;
       users[existingIndex].maxStorageMB = storageQuotaMB;
       users[existingIndex].note = note || users[existingIndex].note;
       if (displayName) users[existingIndex].displayName = displayName;
+      if (parentResellerEmail) users[existingIndex].parentResellerEmail = parentResellerEmail;
+
+      if (assignedRole === 'RESELLER') {
+        users[existingIndex].role = 'RESELLER';
+        users[existingIndex].resellerQuotaMB = Math.max(100, parseInt(resellerQuotaMB) || 5000);
+        users[existingIndex].resellerMaxBots = Math.max(1, parseInt(resellerMaxBots) || 20);
+        users[existingIndex].resellerMaxUsers = Math.max(1, parseInt(resellerMaxUsers) || 10);
+      }
+
       targetUser = users[existingIndex];
     } else {
       targetUser = {
@@ -456,37 +527,162 @@ class AuthManager {
         email: cleanEmail,
         passwordHash: this.hashPassword(pwd),
         plainPasswordHint: pwd,
-        role: 'USER',
+        role: assignedRole,
+        parentResellerEmail: parentResellerEmail || null,
         displayName: displayName || cleanEmail.split('@')[0],
         status: 'ACTIVE',
         expiresAt,
-        maxBots: parseInt(maxBots) || 5,
+        maxBots: requestedBots,
         maxStorageMB: storageQuotaMB,
         createdAt: new Date().toISOString(),
-        note: note || '經由管理員手動授權'
+        note: note || (isActorReseller ? `由代理商 ${creatorUser.email} 開通` : '經由最高主管手動授權'),
+        resellerQuotaMB: assignedRole === 'RESELLER' ? Math.max(100, parseInt(resellerQuotaMB) || 5000) : 0,
+        resellerMaxBots: assignedRole === 'RESELLER' ? Math.max(1, parseInt(resellerMaxBots) || 20) : 0,
+        resellerMaxUsers: assignedRole === 'RESELLER' ? Math.max(1, parseInt(resellerMaxUsers) || 10) : 0
       };
       users.push(targetUser);
     }
 
     this.saveUsers(users);
-    // 即時寫入 Supabase 雲端
     this.syncUserToCloud(targetUser);
+
+    // 審計日誌記錄
+    auditLogger.log(
+      creatorUser?.email || SUPER_ADMIN_EMAIL,
+      existingIndex >= 0 ? 'UPDATE_AUTHORIZE' : (assignedRole === 'RESELLER' ? 'CREATE_RESELLER' : 'CREATE_USER'),
+      cleanEmail,
+      {
+        role: assignedRole,
+        maxStorageMB: assignedRole === 'RESELLER' ? targetUser.resellerQuotaMB : targetUser.maxStorageMB,
+        maxBots: assignedRole === 'RESELLER' ? targetUser.resellerMaxBots : targetUser.maxBots,
+        parentResellerEmail,
+        expiresAt
+      }
+    );
+
+    // 自動非同步寄發 Gmail 帳密與驗證通知信件
+    mailerService.sendAccountCredentialsEmail({
+      toEmail: cleanEmail,
+      displayName: targetUser.displayName,
+      plainPassword: pwd,
+      role: assignedRole,
+      maxStorageMB: assignedRole === 'RESELLER' ? targetUser.resellerQuotaMB : targetUser.maxStorageMB,
+      maxBots: assignedRole === 'RESELLER' ? targetUser.resellerMaxBots : targetUser.maxBots,
+      expiresAt,
+      creatorEmail: creatorUser?.displayName ? `${creatorUser.displayName} (${creatorUser.email})` : (creatorUser?.email || '最高主管 (R.P.J.G)')
+    }).catch(err => {
+      console.error('[MAIL-SEND-BG] 背景發信例外:', err.message);
+    });
+
+    const isMailLive = mailerService.isConfigured();
+    const mailTip = isMailLive
+      ? '（開通信件已自動發送至該 Gmail）'
+      : '（系統目前為模擬寄信模式，請將密碼告知對方）';
 
     return {
       success: true,
-      message: `已成功授權帳號 ${cleanEmail} (派發空間: ${storageQuotaMB} MB)`,
+      message: `已成功開通帳號 ${cleanEmail} (身分: ${assignedRole === 'RESELLER' ? '經銷代理商' : '買家客戶'})！${mailTip}`,
       generatedPassword: pwd,
       expiresAt,
-      maxStorageMB: storageQuotaMB
+      role: assignedRole,
+      maxStorageMB: assignedRole === 'RESELLER' ? targetUser.resellerQuotaMB : targetUser.maxStorageMB,
+      emailConfigured: isMailLive
     };
   }
 
-  // 管理員調配特定使用者的空間配額與機器人限額
-  updateUserQuota(email, { maxStorageMB, maxBots }) {
+  // 取得特定代理商之配額總覽與旗下客戶列表
+  getResellerOverview(resellerEmail) {
+    const cleanEmail = (resellerEmail || '').trim().toLowerCase();
+    const users = this.getUsers();
+    const reseller = users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!reseller) return null;
+
+    const subUsers = users.filter(u => (u.parentResellerEmail || '').toLowerCase() === cleanEmail);
+    const allocatedStorageMB = subUsers.reduce((sum, u) => sum + (u.maxStorageMB || 0), 0);
+    const allocatedBots = subUsers.reduce((sum, u) => sum + (u.maxBots || 0), 0);
+    const maxQuotaMB = reseller.resellerQuotaMB || 1000;
+    const maxBots = reseller.resellerMaxBots || 10;
+    const maxUsers = reseller.resellerMaxUsers || 10;
+
+    const pool = {
+      totalQuotaMB: maxQuotaMB,
+      allocatedQuotaMB: allocatedStorageMB,
+      remainingQuotaMB: Math.max(0, maxQuotaMB - allocatedStorageMB),
+      totalMaxBots: maxBots,
+      allocatedBots,
+      remainingBots: Math.max(0, maxBots - allocatedBots),
+      totalMaxUsers: maxUsers,
+      subUserCount: subUsers.length,
+      remainingUsers: Math.max(0, maxUsers - subUsers.length)
+    };
+
+    return {
+      reseller: {
+        email: reseller.email,
+        displayName: reseller.displayName,
+        role: reseller.role,
+        resellerQuotaMB: maxQuotaMB,
+        resellerMaxBots: maxBots,
+        resellerMaxUsers: maxUsers,
+        allocatedStorageMB,
+        remainingStorageMB: Math.max(0, maxQuotaMB - allocatedStorageMB),
+        storageUsagePercent: maxQuotaMB > 0 ? +((allocatedStorageMB / maxQuotaMB) * 100).toFixed(1) : 0,
+        allocatedBots,
+        remainingBots: Math.max(0, maxBots - allocatedBots),
+        subUserCount: subUsers.length,
+        remainingUsers: Math.max(0, maxUsers - subUsers.length)
+      },
+      pool,
+      subUsers: subUsers.map(u => ({
+        id: u.id,
+        email: u.email,
+        displayName: u.displayName,
+        status: u.status,
+        expiresAt: u.expiresAt,
+        maxBots: u.maxBots,
+        maxStorageMB: u.maxStorageMB,
+        note: u.note,
+        createdAt: u.createdAt,
+        plainPasswordHint: u.plainPasswordHint
+      }))
+    };
+  }
+
+  // 管理員或代理商調配空間配額與機器人限額
+  updateUserQuota(email, { maxStorageMB, maxBots, resellerQuotaMB, resellerMaxBots, resellerMaxUsers }, actorUser = null) {
     const cleanEmail = (email || '').trim().toLowerCase();
     const users = [...this.getUsers()];
     const user = users.find(u => u.email.toLowerCase() === cleanEmail);
     if (!user) return { success: false, message: '查無此帳號' };
+
+    // 權限檢查：若為代理商調配，只能調配旗下客戶且不能超出代理商池
+    const isSuperAdmin = actorUser && actorUser.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+    const isActorReseller = actorUser && actorUser.role === 'RESELLER';
+
+    if (isActorReseller) {
+      if ((user.parentResellerEmail || '').toLowerCase() !== actorUser.email.toLowerCase()) {
+        return { success: false, message: '權限不足：您只能調配自己旗下的客戶配額！' };
+      }
+
+      const targetNewStorage = maxStorageMB !== undefined ? Math.max(10, parseInt(maxStorageMB) || 100) : user.maxStorageMB;
+      const targetNewBots = maxBots !== undefined ? Math.max(1, parseInt(maxBots) || 5) : user.maxBots;
+
+      const subUsers = users.filter(u =>
+        (u.parentResellerEmail || '').toLowerCase() === actorUser.email.toLowerCase() &&
+        u.email.toLowerCase() !== cleanEmail
+      );
+      const allocatedStorage = subUsers.reduce((s, u) => s + (u.maxStorageMB || 0), 0);
+      const allocatedBots = subUsers.reduce((s, u) => s + (u.maxBots || 0), 0);
+      const maxResellerQuota = actorUser.resellerQuotaMB || 1000;
+      const maxResellerBots = actorUser.resellerMaxBots || 10;
+
+      if (allocatedStorage + targetNewStorage > maxResellerQuota) {
+        return { success: false, message: `調配超出代理配額上限！剩餘可用配額為 ${Math.max(0, maxResellerQuota - allocatedStorage)} MB` };
+      }
+      if (allocatedBots + targetNewBots > maxResellerBots) {
+        return { success: false, message: `調配超出代理機器人上限！剩餘可用為 ${Math.max(0, maxResellerBots - allocatedBots)} 台` };
+      }
+    }
 
     if (maxStorageMB !== undefined) {
       user.maxStorageMB = Math.max(10, parseInt(maxStorageMB) || 100);
@@ -495,8 +691,22 @@ class AuthManager {
       user.maxBots = Math.max(1, parseInt(maxBots) || 5);
     }
 
+    // 若為代理商自身配額調整 (僅最高主管可調整)
+    if (isSuperAdmin && user.role === 'RESELLER') {
+      if (resellerQuotaMB !== undefined) user.resellerQuotaMB = Math.max(100, parseInt(resellerQuotaMB) || 5000);
+      if (resellerMaxBots !== undefined) user.resellerMaxBots = Math.max(1, parseInt(resellerMaxBots) || 20);
+      if (resellerMaxUsers !== undefined) user.resellerMaxUsers = Math.max(1, parseInt(resellerMaxUsers) || 10);
+    }
+
     this.saveUsers(users);
     this.syncUserToCloud(user);
+
+    auditLogger.log(
+      actorUser?.email || SUPER_ADMIN_EMAIL,
+      'UPDATE_QUOTA',
+      cleanEmail,
+      { maxStorageMB: user.maxStorageMB, maxBots: user.maxBots, resellerQuotaMB: user.resellerQuotaMB }
+    );
 
     return {
       success: true,
@@ -504,17 +714,25 @@ class AuthManager {
       user: {
         email: user.email,
         maxStorageMB: user.maxStorageMB,
-        maxBots: user.maxBots
+        maxBots: user.maxBots,
+        resellerQuotaMB: user.resellerQuotaMB
       }
     };
   }
 
   // 延長授權天數
-  extendUser(email, days) {
+  extendUser(email, days, actorUser = null) {
     const cleanEmail = (email || '').trim().toLowerCase();
     const users = [...this.getUsers()];
     const user = users.find(u => u.email.toLowerCase() === cleanEmail);
     if (!user) return { success: false, message: '查無此帳號' };
+
+    // 代理商只能延長自己客戶
+    if (actorUser && actorUser.role === 'RESELLER') {
+      if ((user.parentResellerEmail || '').toLowerCase() !== actorUser.email.toLowerCase()) {
+        return { success: false, message: '權限不足：您只能延長自己旗下客戶的授權期限！' };
+      }
+    }
 
     if (days === 'permanent') {
       user.expiresAt = null;
@@ -530,11 +748,18 @@ class AuthManager {
     this.saveUsers(users);
     this.syncUserToCloud(user);
 
+    auditLogger.log(
+      actorUser?.email || SUPER_ADMIN_EMAIL,
+      'EXTEND_USER',
+      cleanEmail,
+      { days, expiresAt: user.expiresAt }
+    );
+
     return { success: true, message: `已更新授權期限`, expiresAt: user.expiresAt };
   }
 
   // 切換帳號啟用/凍結
-  toggleUserStatus(email) {
+  toggleUserStatus(email, actorUser = null) {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
       return { success: false, message: '無法凍結最高管理員帳號' };
@@ -543,22 +768,54 @@ class AuthManager {
     const user = users.find(u => u.email.toLowerCase() === cleanEmail);
     if (!user) return { success: false, message: '查無此帳號' };
 
+    // 代理商權限檢查
+    if (actorUser && actorUser.role === 'RESELLER') {
+      if ((user.parentResellerEmail || '').toLowerCase() !== actorUser.email.toLowerCase()) {
+        return { success: false, message: '權限不足：您只能凍結自己旗下客戶的帳號！' };
+      }
+    }
+
     user.status = user.status === 'ACTIVE' ? 'SUSPENDED' : 'ACTIVE';
     this.saveUsers(users);
     this.syncUserToCloud(user);
+
+    auditLogger.log(
+      actorUser?.email || SUPER_ADMIN_EMAIL,
+      user.status === 'SUSPENDED' ? 'SUSPEND_USER' : 'ACTIVATE_USER',
+      cleanEmail,
+      { status: user.status }
+    );
 
     return { success: true, status: user.status };
   }
 
   // 刪除使用者
-  deleteUser(email) {
+  deleteUser(email, actorUser = null) {
     const cleanEmail = (email || '').trim().toLowerCase();
     if (cleanEmail === SUPER_ADMIN_EMAIL.toLowerCase()) {
       return { success: false, message: '無法刪除最高管理員帳號' };
     }
-    let users = this.getUsers().filter(u => u.email.toLowerCase() !== cleanEmail);
-    this.saveUsers(users);
+    const users = this.getUsers();
+    const user = users.find(u => u.email.toLowerCase() === cleanEmail);
+    if (!user) return { success: false, message: '查無此帳號' };
+
+    // 代理商權限檢查
+    if (actorUser && actorUser.role === 'RESELLER') {
+      if ((user.parentResellerEmail || '').toLowerCase() !== actorUser.email.toLowerCase()) {
+        return { success: false, message: '權限不足：您只能刪除自己旗下客戶的帳號！' };
+      }
+    }
+
+    let updatedUsers = users.filter(u => u.email.toLowerCase() !== cleanEmail);
+    this.saveUsers(updatedUsers);
     this.deleteUserFromCloud(cleanEmail);
+
+    auditLogger.log(
+      actorUser?.email || SUPER_ADMIN_EMAIL,
+      'DELETE_USER',
+      cleanEmail,
+      { role: user.role }
+    );
 
     return { success: true, message: `已移除帳號 ${cleanEmail}` };
   }
@@ -587,7 +844,11 @@ class AuthManager {
       return {
         id: u.id,
         email: u.email,
-        role: u.role,
+        role: u.role || 'USER',
+        parentResellerEmail: u.parentResellerEmail || null,
+        resellerQuotaMB: u.resellerQuotaMB || 0,
+        resellerMaxBots: u.resellerMaxBots || 0,
+        resellerMaxUsers: u.resellerMaxUsers || 0,
         displayName: u.displayName,
         status: u.status,
         expiresAt: u.expiresAt,

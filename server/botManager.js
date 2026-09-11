@@ -11,6 +11,7 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 import { fileURLToPath } from 'url';
 import { authManager, SUPER_ADMIN_EMAIL } from './authManager.js';
+import { auditLogger } from './auditLogger.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -450,11 +451,25 @@ class BotManager {
     }
   }
 
-  // 取得機器人清單 (支援使用者隔離：每個人只看自己託管的機器人，管理員開啟 showAll 時可看全部)
-  listBots(userEmail = null, showAll = false) {
+  // 取得機器人清單 (支援使用者隔離、經銷代理商與最高管理員全域穿透視角)
+  listBots(userEmail = null, showAll = false, actorUser = null) {
     if (!fs.existsSync(BOTS_DIR)) return [];
     const entries = fs.readdirSync(BOTS_DIR, { withFileTypes: true });
     const bots = [];
+
+    const isSuperAdmin = (actorUser && actorUser.role === 'SUPER_ADMIN') ||
+                         (userEmail && userEmail.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
+    const isReseller = actorUser && actorUser.role === 'RESELLER';
+
+    // 取得代理商旗下的所有子客戶名冊
+    const resellerSubEmails = new Set();
+    if (isReseller && actorUser) {
+      const allUsers = authManager.getUsers();
+      allUsers
+        .filter(u => (u.parentResellerEmail || '').toLowerCase() === actorUser.email.toLowerCase())
+        .forEach(u => resellerSubEmails.add(u.email.toLowerCase()));
+      resellerSubEmails.add(actorUser.email.toLowerCase());
+    }
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
@@ -462,11 +477,20 @@ class BotManager {
         if (fs.existsSync(metaPath)) {
           try {
             const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+            const botOwner = (meta.ownerEmail || SUPER_ADMIN_EMAIL).toLowerCase();
 
-            // 權限過濾：若非全域視角，且有傳入使用者 Email，則只能看自己擁有的 Bot
-            const botOwner = meta.ownerEmail || SUPER_ADMIN_EMAIL;
-            if (!showAll && userEmail) {
-              if (botOwner.toLowerCase() !== userEmail.toLowerCase()) {
+            // 權限過濾：
+            // 1. 最高管理員開啟 showAll 時可看全站所有機器人
+            if (isSuperAdmin && showAll) {
+              // 允許全看
+            } else if (isReseller) {
+              // 2. 經銷代理商：可檢視自己與旗下所有代理客戶的機器人
+              if (!resellerSubEmails.has(botOwner)) {
+                continue;
+              }
+            } else if (userEmail) {
+              // 3. 一般買家客戶：只能檢視自己擁有的機器人
+              if (botOwner !== userEmail.toLowerCase()) {
                 continue;
               }
             }
@@ -477,9 +501,13 @@ class BotManager {
               ? 'DISABLED'
               : (isRunning ? 'ONLINE' : (meta.status === 'STARTING' ? 'STARTING' : 'OFFLINE'));
 
+            const ownerObj = authManager.getUser(botOwner);
+
             bots.push({
               ...meta,
               ownerEmail: botOwner,
+              ownerDisplayName: ownerObj?.displayName || botOwner,
+              parentResellerEmail: ownerObj?.parentResellerEmail || null,
               status: effectiveStatus,
               ...currentStats
             });
@@ -631,12 +659,20 @@ class BotManager {
       console.error('背景依賴安裝例外:', e.message);
     });
 
+    auditLogger.log(
+      ownerEmail || SUPER_ADMIN_EMAIL,
+      'BOT_CREATE',
+      `${metadata.name} (${botId})`,
+      { type: metadata.type, mainFile: detectedMainFile }
+    );
+
     this.syncToBackup();
     return metadata;
   }
 
-  deleteBot(botId) {
-    this.stopBot(botId);
+  deleteBot(botId, actorEmail = null) {
+    const existing = this.getBot(botId);
+    this.stopBot(botId, actorEmail);
     const botDir = path.join(BOTS_DIR, botId);
     try {
       if (fs.existsSync(botDir)) {
@@ -655,6 +691,14 @@ class BotManager {
     this.stats.delete(botId);
     this.syncToBackup();
     this.broadcast({ type: 'bot_deleted', botId });
+
+    auditLogger.log(
+      actorEmail || existing?.ownerEmail || 'USER',
+      'BOT_DELETE',
+      `${existing?.name || botId} (${botId})`,
+      { botId, botName: existing?.name, ownerEmail: existing?.ownerEmail }
+    );
+
     return true;
   }
 
@@ -831,7 +875,7 @@ class BotManager {
     }
   }
 
-  async startBot(botId) {
+  async startBot(botId, actorEmail = null) {
     if (this.processes.has(botId)) {
       return { success: false, message: '機器人已在運行中' };
     }
@@ -998,6 +1042,13 @@ class BotManager {
         this.updateBotStatus(botId, 'OFFLINE');
       });
 
+      auditLogger.log(
+        actorEmail || bot.ownerEmail || 'USER',
+        'BOT_START',
+        `${bot.name} (${botId})`,
+        { botId, botName: bot.name, ownerEmail: bot.ownerEmail }
+      );
+
       return { success: true, message: '機器人啟動指令已下達' };
     } catch (err) {
       this.updateBotStatus(botId, 'OFFLINE');
@@ -1006,13 +1057,14 @@ class BotManager {
     }
   }
 
-  stopBot(botId) {
+  stopBot(botId, actorEmail = null) {
     this.manualStopping.add(botId);
     const child = this.processes.get(botId);
     if (!child) {
       return { success: false, message: '機器人未在運行中' };
     }
 
+    const bot = this.getBot(botId);
     this.appendLog(botId, `\x1b[33m[RPJG-SYSTEM]\x1b[0m 正在優雅終止進程 (SIGTERM / PID: ${child.pid})...`);
     try {
       if (process.platform === 'win32') {
@@ -1031,15 +1083,23 @@ class BotManager {
     this.stats.set(botId, { cpu: 0, memory: 0, uptime: 0 });
     this.updateBotStatus(botId, 'OFFLINE');
     this.appendLog(botId, `\x1b[32m[RPJG-SYSTEM]\x1b[0m 機器人已安全停止。`);
+
+    auditLogger.log(
+      actorEmail || (bot ? bot.ownerEmail : 'USER'),
+      'BOT_STOP',
+      `${bot ? bot.name : botId} (${botId})`,
+      { botId, botName: bot ? bot.name : botId, ownerEmail: bot ? bot.ownerEmail : null }
+    );
+
     return { success: true, message: '機器人已成功停止' };
   }
 
-  restartBot(botId) {
+  restartBot(botId, actorEmail = null) {
     this.appendLog(botId, `\x1b[35m[RPJG-SYSTEM]\x1b[0m 正在重新啟動機器人...`);
-    this.stopBot(botId);
+    this.stopBot(botId, actorEmail);
     return new Promise((resolve) => {
-      setTimeout(() => {
-        const res = this.startBot(botId);
+      setTimeout(async () => {
+        const res = await this.startBot(botId, actorEmail);
         resolve(res);
       }, 1000);
     });

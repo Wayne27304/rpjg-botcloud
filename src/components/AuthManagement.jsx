@@ -26,10 +26,15 @@ import {
   ExternalLink,
   HardDrive,
   Sliders,
-  X
+  X,
+  Mail,
+  Send,
+  Activity,
+  Filter
 } from 'lucide-react';
+import GlobalAuditLogsModal from './GlobalAuditLogsModal';
 
-export default function AuthManagement({ currentUser }) {
+export default function AuthManagement({ currentUser, bots = [] }) {
   const [users, setUsers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState(null);
@@ -39,6 +44,16 @@ export default function AuthManagement({ currentUser }) {
   const [botsBackupCount, setBotsBackupCount] = useState(0);
   const [copiedBackupEnv, setCopiedBackupEnv] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  // 經銷代理商與全域審計
+  const [role, setRole] = useState('USER'); // 'USER' | 'RESELLER'
+  const [resellerQuotaMB, setResellerQuotaMB] = useState(5000);
+  const [resellerMaxBots, setResellerMaxBots] = useState(20);
+  const [resellerMaxUsers, setResellerMaxUsers] = useState(10);
+  const [userRoleFilter, setUserRoleFilter] = useState('ALL'); // 'ALL' | 'RESELLER' | 'USER'
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [isTestingEmail, setIsTestingEmail] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState(null);
 
   // 主機容量與使用者配額狀態
   const [storageOverview, setStorageOverview] = useState(null);
@@ -185,18 +200,23 @@ export default function AuthManagement({ currentUser }) {
           email: email.trim(),
           displayName: displayName.trim(),
           password: password.trim() || undefined,
+          role,
           durationType,
           customDays,
-          maxBots,
+          maxBots: parseInt(maxBots) || 5,
           maxStorageMB: parseInt(maxStorageMB) || 100,
+          resellerQuotaMB: parseInt(resellerQuotaMB) || 5000,
+          resellerMaxBots: parseInt(resellerMaxBots) || 20,
+          resellerMaxUsers: parseInt(resellerMaxUsers) || 10,
           note: note.trim()
         })
       });
       const data = await res.json();
       if (data.success) {
+        const isReseller = role === 'RESELLER';
         setFormStatus({
           type: 'success',
-          message: `已成功授權 ${email}！密碼為：${data.generatedPassword} (派發空間: ${data.maxStorageMB || maxStorageMB} MB)。請提供帳號與密碼供買家手動登入。`
+          message: `已成功授權 ${isReseller ? '👑 經銷代理商' : '👤 客戶'} ${email}！密碼：${data.generatedPassword} (已自動透過 Gmail 寄送啟用通知與帳密)。`
         });
         setEmail('');
         setDisplayName('');
@@ -210,7 +230,29 @@ export default function AuthManagement({ currentUser }) {
         setFormStatus({ type: 'error', message: data.message });
       }
     } catch (e) {
-      setFormStatus({ type: 'error', message: '操作失敗' });
+      setFormStatus({ type: 'error', message: '操作失敗: ' + e.message });
+    }
+  };
+
+  const handleTestEmail = async () => {
+    setIsTestingEmail(true);
+    setEmailTestResult(null);
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch('/api/admin/test-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ targetEmail: currentUser?.email })
+      });
+      const data = await res.json();
+      setEmailTestResult(data);
+    } catch (err) {
+      setEmailTestResult({ success: false, message: err.message });
+    } finally {
+      setIsTestingEmail(false);
     }
   };
 
@@ -607,6 +649,25 @@ export default function AuthManagement({ currentUser }) {
             </button>
 
             <button
+              onClick={() => setIsAuditModalOpen(true)}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 text-xs font-semibold border border-indigo-500/40 transition shadow-sm"
+              title="查看全域所有操作審計日誌與遠端機器人 Console"
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>日誌與審計</span>
+            </button>
+
+            <button
+              onClick={handleTestEmail}
+              disabled={isTestingEmail}
+              className="flex items-center space-x-1.5 px-3 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-semibold border border-amber-500/40 transition shadow-sm"
+              title="測試寄送驗證信至管理員信箱"
+            >
+              <Mail className={`w-3.5 h-3.5 ${isTestingEmail ? 'animate-spin' : ''}`} />
+              <span>{isTestingEmail ? '測試發信中...' : '測試 Gmail 寄信'}</span>
+            </button>
+
+            <button
               onClick={() => setShowGuide(!showGuide)}
               className="flex items-center space-x-1 px-2.5 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white text-xs transition"
               title="如何設定 Supabase 永久雲端資料庫"
@@ -671,6 +732,38 @@ export default function AuthManagement({ currentUser }) {
         )}
 
         <form onSubmit={handleAuthorize} className="mt-5 space-y-4">
+          {/* 角色權限選擇 */}
+          <div className="p-3.5 bg-[#141517] rounded-xl border border-[#35373c] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <span className="text-xs font-bold text-white block">授權帳號類型 (Account Role)</span>
+              <span className="text-[11px] text-gray-400">選擇賦予普通終端客戶，或具備配額轉派權限的經銷代理商</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setRole('USER')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  role === 'USER'
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'bg-[#1e1f22] text-gray-400 hover:text-white'
+                }`}
+              >
+                👤 普通客戶 (USER)
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole('RESELLER')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                  role === 'RESELLER'
+                    ? 'bg-amber-500 text-black shadow-md font-extrabold'
+                    : 'bg-[#1e1f22] text-gray-400 hover:text-white'
+                }`}
+              >
+                👑 經銷代理商 (RESELLER)
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-300 mb-1">
@@ -694,7 +787,7 @@ export default function AuthManagement({ currentUser }) {
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="例如: 小明 / VIP 客戶"
+                placeholder="例如: 小明 / VIP 經銷商"
                 className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] focus:outline-none focus:border-discord-blurple"
               />
             </div>
@@ -721,6 +814,110 @@ export default function AuthManagement({ currentUser }) {
               />
             </div>
           </div>
+
+          {/* 若為經銷代理商，顯示代理配額池設定 */}
+          {role === 'RESELLER' ? (
+            <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
+              <div className="flex items-center space-x-2 text-amber-300 font-bold text-xs">
+                <Crown className="w-4 h-4" />
+                <span>經銷代理商配額池設定 (Reseller Quota Pool)</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-300 mb-1">
+                    代理儲存總額度池 (MB)
+                  </label>
+                  <input
+                    type="number"
+                    min="100"
+                    value={resellerQuotaMB}
+                    onChange={(e) => setResellerQuotaMB(e.target.value)}
+                    className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-amber-500/30 font-mono"
+                  />
+                  <div className="text-[10px] text-gray-500 mt-1">例如 5000 MB (5GB) 供代理商自由分派</div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-300 mb-1">
+                    代理機器人總名額 (台)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={resellerMaxBots}
+                    onChange={(e) => setResellerMaxBots(e.target.value)}
+                    className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-amber-500/30 font-mono"
+                  />
+                  <div className="text-[10px] text-gray-500 mt-1">供其旗下買家分攤開機台數</div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-300 mb-1">
+                    可派發客戶帳號上限 (人)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={resellerMaxUsers}
+                    onChange={(e) => setResellerMaxUsers(e.target.value)}
+                    className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-amber-500/30 font-mono"
+                  />
+                  <div className="text-[10px] text-gray-500 mt-1">代理商最多可建立之買家名額</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              <div>
+                <label className="block text-xs font-medium text-gray-300 mb-1">
+                  允許託管機器人數量
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={maxBots}
+                  onChange={(e) => setMaxBots(e.target.value)}
+                  className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] font-mono"
+                />
+                <div className="text-[10px] text-gray-500 mt-1">預設 5 台</div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-300 mb-1 flex items-center justify-between">
+                  <span>派發儲存空間配額</span>
+                  <span className="text-cyan-400 font-mono font-bold">{maxStorageMB} MB</span>
+                </label>
+                <div className="flex items-center space-x-1.5">
+                  <input
+                    type="number"
+                    min="10"
+                    max="10240"
+                    value={maxStorageMB}
+                    onChange={(e) => setMaxStorageMB(e.target.value)}
+                    className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] font-mono"
+                  />
+                  <span className="text-xs text-gray-400 shrink-0">MB</span>
+                </div>
+                <div className="flex items-center space-x-1 mt-1.5 overflow-x-auto">
+                  {[50, 100, 200, 500, 1024].map(sz => (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() => setMaxStorageMB(sz)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition shrink-0 ${
+                        parseInt(maxStorageMB) === sz
+                          ? 'bg-cyan-500 text-black font-bold'
+                          : 'bg-gray-800 text-gray-400 hover:text-white'
+                      }`}
+                    >
+                      {sz >= 1024 ? `${sz / 1024}GB` : `${sz}MB`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* 授權期限按鈕組 */}
           <div>
@@ -771,78 +968,32 @@ export default function AuthManagement({ currentUser }) {
             )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
-            <div>
-              <label className="block text-xs font-medium text-gray-300 mb-1">
-                允許託管機器人數量
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="50"
-                value={maxBots}
-                onChange={(e) => setMaxBots(e.target.value)}
-                className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] font-mono"
-              />
-              <div className="text-[10px] text-gray-500 mt-1">預設 5 台</div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-300 mb-1 flex items-center justify-between">
-                <span>派發儲存空間配額</span>
-                <span className="text-cyan-400 font-mono font-bold">{maxStorageMB} MB</span>
-              </label>
-              <div className="flex items-center space-x-1.5">
-                <input
-                  type="number"
-                  min="10"
-                  max="10240"
-                  value={maxStorageMB}
-                  onChange={(e) => setMaxStorageMB(e.target.value)}
-                  className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] font-mono"
-                />
-                <span className="text-xs text-gray-400 shrink-0">MB</span>
-              </div>
-              <div className="flex items-center space-x-1 mt-1.5 overflow-x-auto">
-                {[50, 100, 200, 500, 1024].map(sz => (
-                  <button
-                    key={sz}
-                    type="button"
-                    onClick={() => setMaxStorageMB(sz)}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono transition shrink-0 ${
-                      parseInt(maxStorageMB) === sz
-                        ? 'bg-cyan-500 text-black font-bold'
-                        : 'bg-gray-800 text-gray-400 hover:text-white'
-                    }`}
-                  >
-                    {sz >= 1024 ? `${sz / 1024}GB` : `${sz}MB`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-gray-300 mb-1">
-                備註說明 (客戶姓名、社群名稱等)
-              </label>
-              <input
-                type="text"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="例如: Discord 伺服器技術長"
-                className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c]"
-              />
-              <div className="text-[10px] text-gray-500 mt-1">選填</div>
-            </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-300 mb-1">
+              備註說明 (客戶姓名、社群名稱等)
+            </label>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="例如: 蝦皮訂單 / 官方經銷夥伴"
+              className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c]"
+            />
+            <div className="text-[10px] text-gray-500 mt-1">選填</div>
           </div>
 
-          <div className="flex justify-end pt-2">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+            <div className="text-xs text-gray-400 flex items-center space-x-2">
+              <Mail className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>開通後系統將<strong>自動以 Gmail 寄發帳號密碼與授權通知</strong>給填入的信箱！</span>
+            </div>
+
             <button
               type="submit"
-              className="flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-bold shadow-lg shadow-discord-blurple/30 transition"
+              className="flex items-center space-x-2 px-6 py-2.5 rounded-xl bg-discord-blurple hover:bg-discord-blurple-hover text-white text-xs font-bold shadow-lg shadow-discord-blurple/30 transition shrink-0"
             >
               <UserPlus className="w-4 h-4" />
-              <span>確認簽發授權</span>
+              <span>確認簽發並寄信通知</span>
             </button>
           </div>
         </form>
@@ -850,18 +1001,35 @@ export default function AuthManagement({ currentUser }) {
 
       {/* 授權列表 */}
       <div className="bg-[#1e1f22] rounded-2xl border border-[#2b2d31] overflow-hidden shadow-xl">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#2b2d31]">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-[#2b2d31]">
           <div className="flex items-center space-x-2">
             <Users className="w-5 h-5 text-indigo-400" />
             <h3 className="text-sm font-bold text-white">已授權使用者名冊</h3>
           </div>
-          <button
-            onClick={() => { fetchUsers(); fetchStorageStatus(); }}
-            title="重新整理"
-            className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          </button>
+
+          <div className="flex items-center space-x-3">
+            {/* 角色篩選 */}
+            <div className="flex items-center space-x-1.5 bg-[#141517] px-2.5 py-1 rounded-xl border border-[#2b2d31]">
+              <Filter className="w-3.5 h-3.5 text-gray-400" />
+              <select
+                value={userRoleFilter}
+                onChange={(e) => setUserRoleFilter(e.target.value)}
+                className="bg-transparent text-xs text-gray-300 focus:outline-none"
+              >
+                <option value="ALL" className="bg-[#1e1f22]">全部帳號 ({users.length})</option>
+                <option value="RESELLER" className="bg-[#1e1f22]">僅經銷代理商 ({users.filter(u => u.role === 'RESELLER').length})</option>
+                <option value="USER" className="bg-[#1e1f22]">僅普通客戶 ({users.filter(u => u.role === 'USER' || !u.role).length})</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => { fetchUsers(); fetchStorageStatus(); }}
+              title="重新整理"
+              className="p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -878,36 +1046,68 @@ export default function AuthManagement({ currentUser }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#2b2d31]">
-              {users.map((u, idx) => {
-                const isSuper = u.isSuperAdmin;
-                const isExp = u.isExpired;
-                const isSuspended = u.status === 'SUSPENDED';
+              {users
+                .filter(u => userRoleFilter === 'ALL' ? true : (userRoleFilter === 'RESELLER' ? u.role === 'RESELLER' : u.role !== 'RESELLER'))
+                .map((u, idx) => {
+                  const isSuper = u.isSuperAdmin;
+                  const isReseller = u.role === 'RESELLER';
+                  const isExp = u.isExpired;
+                  const isSuspended = u.status === 'SUSPENDED';
 
-                return (
-                  <tr key={u.id} className="hover:bg-[#232428] transition">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center space-x-2.5">
-                        <div className={`p-2 rounded-xl ${isSuper ? 'bg-amber-500/20 text-amber-300' : 'bg-gray-800 text-gray-300'}`}>
-                          {isSuper ? <Crown className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-                        </div>
-                        <div>
-                          <div className="font-bold text-white font-mono flex items-center space-x-1.5">
-                            <span>{u.email}</span>
-                            {isSuper && (
-                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                                總管
-                              </span>
-                            )}
+                  return (
+                    <tr key={u.id} className="hover:bg-[#232428] transition">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center space-x-2.5">
+                          <div className={`p-2 rounded-xl ${isSuper ? 'bg-amber-500/20 text-amber-300' : (isReseller ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-800 text-gray-300')}`}>
+                            {isSuper ? <Crown className="w-4 h-4" /> : (isReseller ? <Crown className="w-4 h-4 text-amber-400" /> : <Shield className="w-4 h-4" />)}
                           </div>
-                          <div className="text-[11px] text-gray-400">{u.displayName}</div>
+                          <div>
+                            <div className="font-bold text-white font-mono flex items-center space-x-1.5">
+                              <span>{u.email}</span>
+                              {isSuper && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                  總管
+                                </span>
+                              )}
+                              {isReseller && (
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
+                                  代理商
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-gray-400">{u.displayName}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td className="px-4 py-4">
-                      <div className="text-xs text-gray-200">{u.note || '無備註'}</div>
-                      <div className="text-[10px] text-gray-500">上限: {u.maxBots} 台機器人</div>
-                    </td>
+                      <td className="px-4 py-4">
+                        <div className="flex items-center space-x-1 mb-1">
+                          {isSuper ? (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                              最高主管
+                            </span>
+                          ) : isReseller ? (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                              經銷代理商
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                              終端客戶
+                            </span>
+                          )}
+                          {u.parentResellerEmail && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate max-w-[110px]" title={`所屬代理商: ${u.parentResellerEmail}`}>
+                              代理: {u.parentResellerEmail.split('@')[0]}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-200">{u.note || '無備註'}</div>
+                        <div className="text-[10px] text-gray-500">
+                          {isReseller
+                            ? `總配額池: ${u.resellerQuotaMB || 0}MB / ${u.resellerMaxBots || 0}台 / ${u.resellerMaxUsers || 0}人`
+                            : `上限: ${u.maxBots} 台機器人`}
+                        </div>
+                      </td>
 
                     <td className="px-4 py-4">
                       <div className="flex items-center space-x-1.5 font-mono text-gray-200">
@@ -1221,6 +1421,14 @@ export default function AuthManagement({ currentUser }) {
           </div>
         </div>
       )}
+
+      {/* 全域日誌與審計彈窗 */}
+      <GlobalAuditLogsModal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        currentUser={currentUser}
+        bots={bots}
+      />
     </div>
   );
 }
