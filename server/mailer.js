@@ -8,7 +8,13 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
 import path from 'path';
+import dns from 'dns';
 import { fileURLToPath } from 'url';
+
+// 在雲端容器環境下強制 IPv4 優先，避免 Render/AWS 無 IPv6 外網路由導致的 ENETUNREACH
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,7 +40,7 @@ class MailerService {
     return !!(user && pass);
   }
 
-  // 取得獨立且全新的 SMTP 連線實例 (避免 Socket 閒置斷線逾時問題)
+  // 取得獨立且全新的 SMTP 連線實例 (強制 IPv4，避免 Socket 閒置斷線逾時與 ENETUNREACH)
   getTransporter() {
     const { user, pass } = this.getCredentials();
     if (!user || !pass) return null;
@@ -43,10 +49,11 @@ class MailerService {
       host: 'smtp.gmail.com',
       port: 465,
       secure: true,
+      family: 4, // 強制 IPv4 連線，徹底解決 Render 容器無 IPv6 路由錯誤
       auth: { user, pass },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
       tls: {
         rejectUnauthorized: false
       }

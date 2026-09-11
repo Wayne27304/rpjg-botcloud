@@ -5,6 +5,10 @@
  * ================================================================
  */
 
+import dns from 'dns';
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('ipv4first');
+}
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
