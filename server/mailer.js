@@ -21,8 +21,11 @@ class MailerService {
   }
 
   initTransporter() {
-    const gmailUser = (process.env.GMAIL_USER || process.env.SMTP_USER || '').trim();
-    const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').trim();
+    const rawUser = process.env.GMAIL_USER || process.env.SMTP_USER || 'ryanryan311311@gmail.com';
+    const rawPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || 'eztq xvot cdwk ehnp';
+
+    const gmailUser = rawUser.trim();
+    const gmailPass = rawPass.replace(/\s+/g, '').trim();
 
     if (gmailUser && gmailPass) {
       this.transporter = nodemailer.createTransport({
