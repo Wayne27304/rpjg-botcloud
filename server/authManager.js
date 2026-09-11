@@ -864,6 +864,33 @@ class AuthManager {
     });
   }
 
+  // 管理員：重新簽發或重設特定帳號之授權密鑰
+  resetUserKey(email, newKey = null) {
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const users = this.getUsers();
+    const idx = users.findIndex(u => u.email.toLowerCase() === cleanEmail);
+    if (idx < 0) {
+      return { success: false, message: '找不到該帳號' };
+    }
+    const key = newKey && newKey.trim() ? newKey.trim() : 'rpjg_' + crypto.randomBytes(4).toString('hex');
+    users[idx].passwordHash = this.hashPassword(key);
+    users[idx].plainPasswordHint = key;
+    users[idx].updatedAt = new Date().toISOString();
+    this.saveUsers(users);
+    this.syncUserToCloud(users[idx]);
+    auditLogger.log(
+      SUPER_ADMIN_EMAIL,
+      'RESET_KEY',
+      cleanEmail,
+      { role: users[idx].role }
+    );
+    return {
+      success: true,
+      message: `已成功為 ${cleanEmail} 重新簽發專屬密鑰！`,
+      key
+    };
+  }
+
   // 匯出完整備份資料 (JSON)
   exportUsers() {
     const users = this.getUsers();

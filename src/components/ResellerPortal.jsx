@@ -7,7 +7,7 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  Crown,
+  Award,
   UserPlus,
   Users,
   Shield,
@@ -28,7 +28,9 @@ import {
   Send,
   Sliders,
   CheckCircle2,
-  ExternalLink
+  ExternalLink,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import GlobalAuditLogsModal from './GlobalAuditLogsModal';
 
@@ -36,6 +38,8 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
   const [overview, setOverview] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
+  const [showResellerKey, setShowResellerKey] = useState(false);
+  const [copiedResellerKey, setCopiedResellerKey] = useState(false);
 
   // 派發新客戶表單
   const [email, setEmail] = useState('');
@@ -49,6 +53,14 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
   const [formStatus, setFormStatus] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedKeyIndex, setCopiedKeyIndex] = useState(null);
+
+  const handleCopyResellerKey = () => {
+    if (currentUser?.plainPasswordHint) {
+      navigator.clipboard.writeText(currentUser.plainPasswordHint);
+      setCopiedResellerKey(true);
+      setTimeout(() => setCopiedResellerKey(false), 2500);
+    }
+  };
 
   const fetchOverview = async () => {
     setIsLoading(true);
@@ -106,7 +118,7 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
       if (data.success) {
         setFormStatus({
           type: 'success',
-          message: `✅ 客戶 ${email} 開通成功！授權密碼：${data.generatedPassword} (已同步寄出 Gmail 認證通知與登入資訊)`
+          message: `客戶 ${email} 開通成功！授權密碼：${data.generatedPassword} (已同步寄出 Gmail 認證通知與登入資訊)`
         });
         setEmail('');
         setDisplayName('');
@@ -116,11 +128,11 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
       } else {
         setFormStatus({
           type: 'error',
-          message: `❌ 開通失敗：${data.message}`
+          message: `開通失敗：${data.message}`
         });
       }
     } catch (err) {
-      setFormStatus({ type: 'error', message: `❌ 伺服器通訊錯誤: ${err.message}` });
+      setFormStatus({ type: 'error', message: `伺服器通訊錯誤: ${err.message}` });
     } finally {
       setIsSubmitting(false);
     }
@@ -168,7 +180,7 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-indigo-500/10 p-6 rounded-2xl border border-amber-500/30">
         <div className="flex items-center space-x-4">
           <div className="p-3 bg-amber-500/20 text-amber-300 rounded-2xl border border-amber-500/40 shadow-lg shadow-amber-500/20">
-            <Crown className="w-8 h-8" />
+            <Award className="w-8 h-8" />
           </div>
           <div>
             <div className="flex items-center space-x-2">
@@ -200,6 +212,61 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
+        </div>
+      </div>
+
+      {/* 經銷商專屬授權憑證與密鑰存儲專區 (密鑰存處清晰透明) */}
+      <div className="bg-[#1e1f22] border border-amber-500/30 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start space-x-4">
+            <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/40 shrink-0">
+              <Key className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
+                  官方核發 • 經銷商專屬授權憑證
+                </span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                  安全加密保存於雲端資料庫
+                </span>
+              </div>
+              <h2 className="text-base font-bold text-white mt-1">
+                經銷代理專屬密鑰 (Reseller License Key)
+              </h2>
+              <p className="text-xs text-gray-400 mt-0.5 leading-relaxed">
+                此密鑰為您登入本後台與轉派客戶額度的專屬憑證，已由系統安全中心永久保存。
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 bg-[#141517] p-3 rounded-xl border border-[#2b2d31]">
+            <div className="space-y-1">
+              <span className="text-[11px] text-gray-400 block">您的授權金鑰</span>
+              <div className="flex items-center space-x-2">
+                <code className="bg-[#1e1f22] px-3 py-1.5 rounded-lg border border-gray-700 text-sm font-mono font-bold text-cyan-300">
+                  {showResellerKey ? (currentUser?.plainPasswordHint || '******') : '••••••••••••'}
+                </code>
+                <button
+                  type="button"
+                  onClick={() => setShowResellerKey(!showResellerKey)}
+                  className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-800 transition"
+                  title={showResellerKey ? '隱藏密鑰' : '顯示密鑰'}
+                >
+                  {showResellerKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleCopyResellerKey}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs transition flex items-center justify-center space-x-1.5 shadow-md shadow-amber-500/20 shrink-0"
+            >
+              {copiedResellerKey ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedResellerKey ? '已複製密鑰！' : '一鍵複製經銷密鑰'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -502,26 +569,26 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+            <table className="w-full min-w-[750px] text-left text-xs border-collapse">
               <thead className="bg-[#141517] text-gray-400 border-b border-[#2b2d31]">
                 <tr>
-                  <th className="py-3 px-4 font-semibold">客戶 Email / 稱呼</th>
-                  <th className="py-3 px-4 font-semibold">授權密碼提示</th>
-                  <th className="py-3 px-4 font-semibold">配發空間 (MB)</th>
-                  <th className="py-3 px-4 font-semibold">機器人台數</th>
-                  <th className="py-3 px-4 font-semibold">效期狀態</th>
-                  <th className="py-3 px-4 font-semibold">備註</th>
-                  <th className="py-3 px-4 font-semibold text-right">管理操作</th>
+                  <th className="py-3 px-4 font-semibold whitespace-nowrap">客戶 Email / 稱呼</th>
+                  <th className="py-3 px-4 font-semibold whitespace-nowrap">授權密碼提示</th>
+                  <th className="py-3 px-4 font-semibold whitespace-nowrap">配發空間 (MB)</th>
+                  <th className="py-3 px-4 font-semibold whitespace-nowrap">機器人台數</th>
+                  <th className="py-3 px-4 font-semibold whitespace-nowrap">效期狀態</th>
+                  <th className="py-3 px-4 font-semibold whitespace-nowrap">備註</th>
+                  <th className="py-3 px-4 font-semibold text-right whitespace-nowrap">管理操作</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#2b2d31]/50 text-gray-300 font-mono">
                 {subUsers.map((client, idx) => (
                   <tr key={client.email} className="hover:bg-white/[0.02] transition">
-                    <td className="py-3 px-4">
+                    <td className="py-3 px-4 whitespace-nowrap">
                       <div className="font-bold text-white text-xs">{client.email}</div>
                       <div className="text-[11px] text-gray-400">{client.displayName}</div>
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-3 px-4 whitespace-nowrap">
                       <div className="flex items-center space-x-1.5">
                         <span className="text-gray-300 text-[11px]">
                           {client.plainPasswordHint || '******'}
@@ -545,25 +612,25 @@ export default function ResellerPortal({ currentUser, bots = [] }) {
                         )}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-indigo-300 font-semibold">
+                    <td className="py-3 px-4 text-indigo-300 font-semibold whitespace-nowrap">
                       {client.maxStorageMB || 100} MB
                     </td>
-                    <td className="py-3 px-4 text-emerald-300 font-semibold">
+                    <td className="py-3 px-4 text-emerald-300 font-semibold whitespace-nowrap">
                       {client.maxBots || 5} 台
                     </td>
-                    <td className="py-3 px-4">
+                    <td className="py-3 px-4 whitespace-nowrap">
                       {client.expiresAt ? (
-                        <span className="text-amber-400 text-[11px]">
+                        <span className="text-amber-400 text-[11px] whitespace-nowrap inline-block">
                           {new Date(client.expiresAt).toLocaleDateString('zh-TW')} 到期
                         </span>
                       ) : (
-                        <span className="text-emerald-400 text-[11px]">永久有效</span>
+                        <span className="text-emerald-400 text-[11px] whitespace-nowrap inline-block">永久有效</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-gray-400 text-[11px] max-w-xs truncate">
                       {client.note || '-'}
                     </td>
-                    <td className="py-3 px-4 text-right">
+                    <td className="py-3 px-4 text-right whitespace-nowrap">
                       <button
                         onClick={() => handleDeleteClient(client.email)}
                         className="p-1.5 bg-red-900/20 hover:bg-red-900/50 text-red-400 rounded-lg transition"

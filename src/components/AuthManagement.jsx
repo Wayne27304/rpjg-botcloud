@@ -30,7 +30,12 @@ import {
   Mail,
   Send,
   Activity,
-  Filter
+  Filter,
+  Award,
+  User,
+  UserCheck,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import GlobalAuditLogsModal from './GlobalAuditLogsModal';
 import EmailSettingsModal from './EmailSettingsModal';
@@ -218,7 +223,7 @@ export default function AuthManagement({ currentUser, bots = [] }) {
         const isReseller = role === 'RESELLER';
         setFormStatus({
           type: 'success',
-          message: `已成功授權 ${isReseller ? '👑 經銷代理商' : '👤 客戶'} ${email}！密碼：${data.generatedPassword} (已自動透過 Gmail 寄送啟用通知與帳密)。`
+          message: `已成功授權 ${isReseller ? '經銷代理商' : '客戶'} ${email}！專屬授權密鑰：${data.generatedPassword} (已永久保存於雲端資料庫並寄發通知信)。`
         });
         setEmail('');
         setDisplayName('');
@@ -233,6 +238,29 @@ export default function AuthManagement({ currentUser, bots = [] }) {
       }
     } catch (e) {
       setFormStatus({ type: 'error', message: '操作失敗: ' + e.message });
+    }
+  };
+
+  const handleResetKey = async (targetEmail) => {
+    if (!window.confirm(`確定要為 ${targetEmail} 重新簽發一組全新的授權密鑰嗎？舊密鑰將立即失效。`)) return;
+    const token = localStorage.getItem('rpjg_auth_token');
+    try {
+      const res = await fetch(`/api/auth/users/${encodeURIComponent(targetEmail)}/reset-key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert(`${data.message}\n新密鑰：${data.key} (已保存於雲端)`);
+        fetchUsers();
+      } else {
+        alert(data.message || '重設失敗');
+      }
+    } catch (e) {
+      alert('請求異常: ' + e.message);
     }
   };
 
@@ -401,7 +429,7 @@ export default function AuthManagement({ currentUser, bots = [] }) {
         });
         const result = await res.json();
         if (result.success) {
-          alert(`🎉 成功匯入還原 ${result.importedCount} 位使用者帳號！目前名冊共 ${result.totalUsers} 位。`);
+          alert(`成功匯入還原 ${result.importedCount} 位使用者帳號！目前名冊共 ${result.totalUsers} 位。`);
           fetchUsers();
           fetchStorageStatus();
         } else {
@@ -594,14 +622,16 @@ export default function AuthManagement({ currentUser, bots = [] }) {
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className={`px-2 py-0.5 rounded-md text-[11px] font-bold ${
+                <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold flex items-center space-x-1.5 ${
                   isCloud ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
                 }`}>
-                  {isCloud ? '🟢 Supabase 雲端資料庫已連線 (永久保存)' : '🟡 本機檔案模式 (更新將重置)'}
+                  <span className={`w-2 h-2 rounded-full ${isCloud ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                  <span>{isCloud ? 'Supabase 雲端資料庫已連線 (永久保存)' : '本機檔案模式 (更新將重置)'}</span>
                 </span>
                 {storageStatus?.hasBackupEnv && (
-                  <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800">
-                    📦 Render 環境變數快照已啟用
+                  <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-indigo-950 text-indigo-300 border border-indigo-800 flex items-center space-x-1.5">
+                    <Database className="w-3 h-3 text-indigo-400" />
+                    <span>Render 環境變數快照已啟用</span>
                   </span>
                 )}
               </div>
@@ -702,8 +732,9 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                 </div>
               </li>
             </ol>
-            <div className="p-2.5 rounded-lg bg-indigo-950/40 border border-indigo-800/60 text-indigo-300 text-[11px]">
-              💡 <strong>小撇步</strong>：若您目前尚未建立 Supabase，也可直接點擊上方「<strong>複製 Render 備份字串</strong>」，到 Render 後台新增變數 <code>RPJG_USERS_BACKUP</code> 並貼上，系統每次重啟就會自動還原所有買家！
+            <div className="flex items-start space-x-2 p-2.5 rounded-lg bg-indigo-950/40 border border-indigo-800/60 text-indigo-300 text-[11px]">
+              <Info className="w-4 h-4 shrink-0 text-indigo-400 mt-0.5" />
+              <span><strong>小撇步</strong>：若您目前尚未建立 Supabase，也可直接點擊上方「<strong>複製 Render 備份字串</strong>」，到 Render 後台新增變數 <code>RPJG_USERS_BACKUP</code> 並貼上，系統每次重啟就會自動還原所有買家！</span>
             </div>
           </div>
         )}
@@ -743,24 +774,26 @@ export default function AuthManagement({ currentUser, bots = [] }) {
               <button
                 type="button"
                 onClick={() => setRole('USER')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
                   role === 'USER'
                     ? 'bg-indigo-600 text-white shadow-md'
                     : 'bg-[#1e1f22] text-gray-400 hover:text-white'
                 }`}
               >
-                👤 普通客戶 (USER)
+                <User className="w-3.5 h-3.5" />
+                <span>普通客戶 (USER)</span>
               </button>
               <button
                 type="button"
                 onClick={() => setRole('RESELLER')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 ${
                   role === 'RESELLER'
                     ? 'bg-amber-500 text-black shadow-md font-extrabold'
                     : 'bg-[#1e1f22] text-gray-400 hover:text-white'
                 }`}
               >
-                👑 經銷代理商 (RESELLER)
+                <Award className="w-3.5 h-3.5" />
+                <span>經銷代理商 (RESELLER)</span>
               </button>
             </div>
           </div>
@@ -795,24 +828,31 @@ export default function AuthManagement({ currentUser, bots = [] }) {
 
             <div>
               <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-medium text-gray-300">
-                  登入密碼 (留空自動生成)
+                <label className="text-xs font-medium text-gray-300 flex items-center space-x-1">
+                  <Key className="w-3 h-3 text-amber-400" />
+                  <span>{role === 'RESELLER' ? '經銷授權密鑰' : '登入密碼'} (留空自動簽發)</span>
                 </label>
                 <button
                   type="button"
                   onClick={handleGeneratePassword}
-                  className="text-[11px] text-discord-blurple hover:underline"
+                  className="text-[11px] text-discord-blurple hover:underline flex items-center space-x-0.5"
                 >
-                  隨機生成
+                  <Key className="w-3 h-3 mr-0.5" />
+                  <span>隨機簽發</span>
                 </button>
               </div>
               <input
                 type="text"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="自訂密碼或留空生成"
+                placeholder={role === 'RESELLER' ? '留空由系統自動簽發專屬密鑰' : '自訂密碼或留空生成'}
                 className="w-full bg-[#141517] text-xs text-white p-2.5 rounded-xl border border-[#35373c] focus:outline-none focus:border-discord-blurple font-mono"
               />
+              <span className="text-[10px] text-gray-500 mt-1 block">
+                {role === 'RESELLER'
+                  ? '此密鑰為經銷商專屬授權金鑰，加密儲存於資料庫並自動寄送'
+                  : '密碼將記錄於名冊並自動發送信件'}
+              </span>
             </div>
           </div>
 
@@ -820,7 +860,7 @@ export default function AuthManagement({ currentUser, bots = [] }) {
           {role === 'RESELLER' ? (
             <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl space-y-3">
               <div className="flex items-center space-x-2 text-amber-300 font-bold text-xs">
-                <Crown className="w-4 h-4" />
+                <Award className="w-4 h-4 text-amber-400" />
                 <span>經銷代理商配額池設定 (Reseller Quota Pool)</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -930,7 +970,7 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                 { id: '1d', label: '1 天 (24小時體驗)', badge: '體驗' },
                 { id: '7d', label: '7 天 (一週)', badge: '短期' },
                 { id: '30d', label: '30 天 (一個月)', badge: '熱門' },
-                { id: 'permanent', label: '🌟 永久授權', badge: 'VIP' },
+                { id: 'permanent', label: '永久授權', badge: 'VIP' },
                 { id: 'custom', label: '自訂天數', badge: '彈性' }
               ].map((item) => (
                 <button
@@ -1034,16 +1074,16 @@ export default function AuthManagement({ currentUser, bots = [] }) {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-gray-300">
+          <table className="w-full text-left text-xs text-gray-300 min-w-[1050px]">
             <thead className="bg-[#141517] text-gray-400 uppercase text-[11px] border-b border-[#2b2d31]">
               <tr>
-                <th className="px-6 py-3">Gmail / 使用者</th>
-                <th className="px-4 py-3">角色與備註</th>
-                <th className="px-4 py-3">密碼提示</th>
-                <th className="px-4 py-3">剩餘時間 / 期限</th>
-                <th className="px-4 py-3">空間配額與用量</th>
-                <th className="px-4 py-3">狀態</th>
-                <th className="px-6 py-3 text-right">管理操作</th>
+                <th className="px-6 py-3 min-w-[200px]">Gmail / 使用者</th>
+                <th className="px-4 py-3 min-w-[170px]">角色與備註</th>
+                <th className="px-4 py-3 min-w-[160px]">授權密鑰 / 憑證</th>
+                <th className="px-4 py-3 min-w-[110px] whitespace-nowrap">剩餘時間 / 期限</th>
+                <th className="px-4 py-3 min-w-[150px]">空間配額與用量</th>
+                <th className="px-4 py-3 min-w-[110px] whitespace-nowrap text-center">授權狀態</th>
+                <th className="px-6 py-3 min-w-[240px] text-right whitespace-nowrap">管理操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#2b2d31]">
@@ -1059,20 +1099,21 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                     <tr key={u.id} className="hover:bg-[#232428] transition">
                       <td className="px-6 py-4">
                         <div className="flex items-center space-x-2.5">
-                          <div className={`p-2 rounded-xl ${isSuper ? 'bg-amber-500/20 text-amber-300' : (isReseller ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-800 text-gray-300')}`}>
-                            {isSuper ? <Crown className="w-4 h-4" /> : (isReseller ? <Crown className="w-4 h-4 text-amber-400" /> : <Shield className="w-4 h-4" />)}
+                          <div className={`p-2 rounded-xl ${isSuper ? 'bg-purple-500/20 text-purple-300' : (isReseller ? 'bg-amber-500/20 text-amber-400' : 'bg-gray-800 text-gray-300')}`}>
+                            {isSuper ? <Shield className="w-4 h-4 text-purple-400" /> : (isReseller ? <Award className="w-4 h-4 text-amber-400" /> : <User className="w-4 h-4" />)}
                           </div>
                           <div>
                             <div className="font-bold text-white font-mono flex items-center space-x-1.5">
                               <span>{u.email}</span>
                               {isSuper && (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-bold">
                                   總管
                                 </span>
                               )}
                               {isReseller && (
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold">
-                                  代理商
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold flex items-center space-x-0.5">
+                                  <Award className="w-2.5 h-2.5 mr-0.5" />
+                                  <span>代理商</span>
                                 </span>
                               )}
                             </div>
@@ -1084,20 +1125,21 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                       <td className="px-4 py-4">
                         <div className="flex items-center space-x-1 mb-1">
                           {isSuper ? (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40">
                               最高主管
                             </span>
                           ) : isReseller ? (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                              經銷代理商
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center space-x-0.5">
+                              <Award className="w-2.5 h-2.5 mr-0.5" />
+                              <span>經銷代理商</span>
                             </span>
                           ) : (
-                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/40">
                               終端客戶
                             </span>
                           )}
                           {u.parentResellerEmail && (
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate max-w-[110px]" title={`所屬代理商: ${u.parentResellerEmail}`}>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 truncate max-w-[110px]" title={`所屬代理商: ${u.parentResellerEmail}`}>
                               代理: {u.parentResellerEmail.split('@')[0]}
                             </span>
                           )}
@@ -1110,24 +1152,39 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                         </div>
                       </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-1.5 font-mono text-gray-200">
-                        <code className="bg-[#141517] px-2 py-0.5 rounded border border-gray-700 text-[11px]">
+                        {isReseller && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center space-x-0.5 shrink-0">
+                            <Key className="w-2.5 h-2.5" />
+                            <span>經銷密鑰</span>
+                          </span>
+                        )}
+                        <code className="bg-[#141517] px-2 py-0.5 rounded border border-gray-700 text-[11px] font-bold text-cyan-300">
                           {u.plainPasswordHint || '******'}
                         </code>
                         {u.plainPasswordHint && (
                           <button
                             onClick={() => copyToClipboard(u.plainPasswordHint, idx)}
-                            className="p-1 text-gray-400 hover:text-white"
-                            title="複製密碼"
+                            className="p-1 text-gray-400 hover:text-white transition"
+                            title="複製授權密鑰"
                           >
                             {copiedIndex === idx ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                        )}
+                        {!isSuper && (
+                          <button
+                            onClick={() => handleResetKey(u.email)}
+                            className="p-1 text-gray-400 hover:text-amber-400 transition"
+                            title="重新簽發/更換專屬密鑰"
+                          >
+                            <RefreshCw className="w-3 h-3" />
                           </button>
                         )}
                       </div>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-4 whitespace-nowrap">
                       <div className={`font-semibold font-mono ${isExp ? 'text-red-400' : (u.expiresAt ? 'text-indigo-300' : 'text-emerald-400')}`}>
                         {u.remainingText}
                       </div>
@@ -1161,18 +1218,21 @@ export default function AuthManagement({ currentUser, bots = [] }) {
                       </div>
                     </td>
 
-                    <td className="px-4 py-4">
+                    <td className="px-4 py-4 whitespace-nowrap text-center">
                       {isSuspended ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-400 border border-amber-800">
-                          已凍結
+                        <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-950 text-amber-400 border border-amber-800 whitespace-nowrap inline-flex items-center space-x-1">
+                          <Lock className="w-3 h-3 mr-1" />
+                          <span>已凍結</span>
                         </span>
                       ) : isExp ? (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-950 text-red-400 border border-red-800">
-                          已過期
+                        <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-red-950 text-red-400 border border-red-800 whitespace-nowrap inline-flex items-center space-x-1">
+                          <AlertTriangle className="w-3 h-3 mr-1" />
+                          <span>已過期</span>
                         </span>
                       ) : (
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800">
-                          正常有效
+                        <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 whitespace-nowrap inline-flex items-center space-x-1">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          <span>正常有效</span>
                         </span>
                       )}
                     </td>

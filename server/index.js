@@ -173,6 +173,7 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
       remainingStorageMB: Math.max(0, +(maxStorageMB - usage.totalMB).toFixed(2)),
       storageUsagePercent: maxStorageMB > 0 ? +((usage.totalMB / maxStorageMB) * 100).toFixed(1) : 0,
       isSuperAdmin: req.user.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase(),
+      plainPasswordHint: req.user.plainPasswordHint || '',
       resellerQuotaMB: req.user.resellerQuotaMB || 0,
       resellerMaxBots: req.user.resellerMaxBots || 0,
       resellerMaxUsers: req.user.resellerMaxUsers || 0,
@@ -378,6 +379,13 @@ app.get('/api/admin/storage-overview', requireAuth, requireSuperAdmin, (req, res
 app.post('/api/auth/users/:email/extend', requireAuth, requireSuperAdmin, (req, res) => {
   const { days } = req.body;
   const result = authManager.extendUser(req.params.email, days);
+  res.json(result);
+});
+
+// 管理員：重新簽發或重設特定使用者的專屬密鑰
+app.post('/api/auth/users/:email/reset-key', requireAuth, requireSuperAdmin, (req, res) => {
+  const { newKey } = req.body || {};
+  const result = authManager.resetUserKey(req.params.email, newKey);
   res.json(result);
 });
 

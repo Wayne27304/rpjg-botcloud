@@ -162,9 +162,9 @@ class MailerService {
     const text = '這是一封來自 RPJG BotCloud 的自動發信測試，代表您的寄件通道完全暢通！';
     const html = `
       <div style="font-family: sans-serif; padding: 24px; background: #1e1f22; color: #f2f3f5; border-radius: 12px; border: 1px solid #35373c;">
-        <h2 style="color: #5865F2; margin-top: 0;">🎉 RPJG BotCloud - Gmail 連線測試成功</h2>
+        <h2 style="color: #5865F2; margin-top: 0;">RPJG BotCloud - Gmail 連線測試成功</h2>
         <p>主管您好！您的自動發信功能運作一切正常。</p>
-        <p>當前運作模式：<strong style="color: #38bdf8;">${relayUrl ? '⚡ Google Apps Script HTTPS 官方轉發 (埠口 443 永不斷線)' : '📡 原生 Gmail SMTP 直連'}</strong></p>
+        <p>當前運作模式：<strong style="color: #38bdf8;">${relayUrl ? 'Google Apps Script HTTPS 官方轉發 (埠口 443 永不斷線)' : '原生 Gmail SMTP 直連'}</strong></p>
         <p>系統日後在您授權經銷代理商或開通客戶帳號時，會自動以此信箱（${user}）寄送認證信件！</p>
         <hr style="border: 0; border-top: 1px solid #35373c; margin: 20px 0;" />
         <p style="font-size: 11px; color: #949ba4;">測試時間：${new Date().toLocaleString('zh-TW')} • R.P.J.G 開發部門</p>
@@ -290,7 +290,7 @@ class MailerService {
           <p>Discord Bot 雲端線上託管平台 • 官方授權認證</p>
         </div>
         <div class="content">
-          <div class="badge">${isReseller ? '👑 經銷代理商憑證' : '⚡ 買家客戶憑證'}</div>
+          <div class="badge">${isReseller ? '經銷代理商憑證' : '買家客戶憑證'}</div>
           <div class="greeting">您好，<strong>${displayName || cleanEmail}</strong>：</div>
           <p style="font-size: 13px; line-height: 1.6; color: #9ca3af;">
             歡迎使用 RPJG BotCloud！您的雲端帳號已由 <strong>${creatorEmail}</strong> 成功簽發開通。您現在可以登入控制台，自由上傳與管理您的專屬 Discord 機器人。
@@ -325,11 +325,11 @@ class MailerService {
           </div>
 
           <div class="btn-box">
-            <a href="${platformUrl}" class="btn" target="_blank">立即前往控制台登入 ➜</a>
+            <a href="${platformUrl}" class="btn" target="_blank">立即前往控制台登入 &rarr;</a>
           </div>
 
           <p style="font-size: 11px; color: #6b7280; line-height: 1.5; margin-top: 25px;">
-            ⚠️ 安全提示：此密碼為系統自動簽發之專屬憑證，請妥善保管，切勿轉發給他人。如非本人申請，請忽略此信件。
+            安全提示：此密碼為系統自動簽發之專屬憑證，請妥善保管，切勿轉發給他人。如非本人申請，請忽略此信件。
           </p>
         </div>
         <div class="footer">

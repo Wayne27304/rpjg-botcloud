@@ -18,7 +18,9 @@ import {
   HardDrive,
   AlertTriangle,
   Upload,
-  Crown,
+  Pause,
+  User,
+  CheckCircle2,
   LogOut,
   UserCheck,
   Clock,
@@ -418,7 +420,7 @@ export default function App() {
                 title={showAllBots ? '切換為僅顯示我託管的機器人' : '顯示全站所有用戶託管的機器人並可進行遠端控制'}
               >
                 <Globe className="w-3.5 h-3.5" />
-                <span>{showAllBots ? '🌐 全站機器人 (開啟中)' : '🌐 顯示所有機器人'}</span>
+                <span>{showAllBots ? '全站機器人 (開啟中)' : '顯示所有機器人'}</span>
               </button>
             )}
 
@@ -635,8 +637,9 @@ export default function App() {
                               </p>
                               {isRemote && (
                                 <div className="mt-1 flex items-center space-x-1.5 text-[10px]">
-                                  <span className="px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60 font-mono truncate max-w-[160px]">
-                                    👤 {bot.ownerEmail}
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800/60 font-mono truncate max-w-[160px] inline-flex items-center">
+                                    <User className="w-3 h-3 shrink-0 mr-1" />
+                                    <span className="truncate">{bot.ownerEmail}</span>
                                   </span>
                                   <span className="text-amber-400 font-bold">[遠端]</span>
                                 </div>
@@ -697,14 +700,21 @@ export default function App() {
                         <div>
                           <div className="flex items-center space-x-2">
                             <h2 className="text-lg font-bold text-white">{selectedBot.name}</h2>
-                            <span className={`px-2 py-0.5 text-[11px] font-bold rounded-full ${
+                            <span className={`px-2 py-0.5 text-[11px] font-bold rounded-full inline-flex items-center space-x-1 whitespace-nowrap ${
                               selectedBot.status === 'DISABLED'
                                 ? 'bg-amber-950 text-amber-300 border border-amber-800/80'
                                 : (selectedBot.status === 'ONLINE'
                                     ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
                                     : 'bg-gray-800 text-gray-400 border border-gray-700')
                             }`}>
-                              {selectedBot.status === 'DISABLED' ? '⏸️ 託管已停用' : selectedBot.status}
+                              {selectedBot.status === 'DISABLED' ? (
+                                <>
+                                  <Pause className="w-3 h-3" />
+                                  <span>託管已停用</span>
+                                </>
+                              ) : (
+                                <span>{selectedBot.status}</span>
+                              )}
                             </span>
                           </div>
                           <p className="text-xs text-gray-400 mt-0.5">
@@ -875,12 +885,14 @@ export default function App() {
                               <h4 className="text-sm font-bold text-white flex items-center space-x-2">
                                 <span>託管運作狀態：</span>
                                 {selectedBot.status === 'DISABLED' ? (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800">
-                                    ⏸️ 託管已停用
+                                  <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded text-[10px] font-bold bg-amber-950 text-amber-300 border border-amber-800 whitespace-nowrap">
+                                    <Pause className="w-3 h-3" />
+                                    <span>託管已停用</span>
                                   </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
-                                    🟢 正常託管中
+                                  <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800 whitespace-nowrap">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                    <span>正常託管中</span>
                                   </span>
                                 )}
                               </h4>
@@ -941,8 +953,15 @@ export default function App() {
                           </div>
                           <div>
                             <label className="block text-gray-400 mb-1">崩潰自動復原 (Auto Restart)</label>
-                            <div className="p-2.5 bg-[#141517] rounded-lg border border-[#35373c] text-emerald-400 font-medium">
-                              {selectedBot.status === 'DISABLED' ? '✕ 託管停用期間暫停自動復原' : '✓ 已啟用常駐守護機制'}
+                            <div className="p-2.5 bg-[#141517] rounded-lg border border-[#35373c] text-emerald-400 font-medium flex items-center space-x-1.5">
+                              {selectedBot.status === 'DISABLED' ? (
+                                <span className="text-amber-400">託管停用期間暫停自動復原</span>
+                              ) : (
+                                <>
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                                  <span>已啟用常駐守護機制</span>
+                                </>
+                              )}
                             </div>
                           </div>
                           <div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal as TerminalIcon, Play, Square, RefreshCw, Trash2, Download, Send, ArrowDownCircle, ShieldCheck } from 'lucide-react';
+import { Terminal as TerminalIcon, Play, Square, RefreshCw, Trash2, Download, Send, ArrowDownCircle, ShieldCheck, Pause } from 'lucide-react';
 import { parseAnsi } from '../utils/ansi';
 
 export default function Console({ bot, onStart, onStop, onRestart, onSuspend, onResume, isActionLoading }) {
@@ -106,8 +106,9 @@ export default function Console({ bot, onStart, onStop, onRestart, onSuspend, on
             <span className="truncate max-w-[120px] sm:max-w-[220px]">bash: ~/{bot?.name || 'terminal'}</span>
           </div>
           {isDisabled ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/90 text-amber-300 border border-amber-800/80 whitespace-nowrap shrink-0">
-              ⏸️ 託管已停用
+            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold bg-amber-950/90 text-amber-300 border border-amber-800/80 whitespace-nowrap shrink-0">
+              <Pause className="w-3 h-3 shrink-0" />
+              <span>託管已停用</span>
             </span>
           ) : (
             <span className="hidden lg:inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-purple-950/80 text-purple-300 border border-purple-800/60 whitespace-nowrap shrink-0">

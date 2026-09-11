@@ -203,8 +203,9 @@ export default function EmailSettingsModal({ isOpen, onClose, currentUser }) {
               <span className="text-sm font-bold text-amber-300 font-mono truncate block">
                 {settings?.smtpUser || 'ryanryan311311@gmail.com'}
               </span>
-              <span className="text-[11px] text-emerald-400 mt-1 block">
-                ✓ 認證信件皆由此 Gmail 簽發
+              <span className="text-[11px] text-emerald-400 mt-1 inline-flex items-center space-x-1">
+                <Check className="w-3 h-3 shrink-0" />
+                <span>認證信件皆由此 Gmail 簽發</span>
               </span>
             </div>
           </div>
@@ -271,7 +272,8 @@ export default function EmailSettingsModal({ isOpen, onClose, currentUser }) {
             <div className="bg-[#141517] p-4 rounded-xl border border-indigo-500/30 text-xs text-gray-300 space-y-3 animate-fade-in">
               <div className="flex items-center justify-between border-b border-[#2b2d31] pb-2">
                 <h4 className="font-bold text-white flex items-center space-x-1.5">
-                  <span>⚡ 30 秒免費設定 Google Apps Script 教學：</span>
+                  <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>30 秒免費設定 Google Apps Script 教學：</span>
                 </h4>
                 <button
                   type="button"
@@ -291,7 +293,7 @@ export default function EmailSettingsModal({ isOpen, onClose, currentUser }) {
                   將編輯器預設內容清空，貼上剛才複製的腳本代碼，點擊磁碟圖示儲存。
                 </li>
                 <li>
-                  點擊右上角「<strong>部署</strong>」➜「<strong>新增部署</strong>」。
+                  點擊右上角「<strong>部署</strong>」&rarr;「<strong>新增部署</strong>」。
                 </li>
                 <li>
                   左側齒輪選「<strong>網頁應用程式 (Web App)</strong>」：
@@ -333,7 +335,7 @@ export default function EmailSettingsModal({ isOpen, onClose, currentUser }) {
               }`}>
                 <div className="flex items-center space-x-2 font-bold">
                   {testResult.success ? <Check className="w-4 h-4 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />}
-                  <span>{testResult.success ? '🎉 發信成功！' : '❌ 發信失敗'}</span>
+                  <span>{testResult.success ? '發信成功！' : '發信失敗'}</span>
                 </div>
                 <div className="pl-6 text-[11px] leading-relaxed text-gray-300 font-mono">
                   {testResult.message}

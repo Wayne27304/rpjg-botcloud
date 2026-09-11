@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Bot, Lock, Mail, ArrowRight, AlertCircle, Sparkles, Loader2 } from 'lucide-react';
+import { Bot, Lock, Mail, ArrowRight, AlertCircle, Sparkles, Loader2, Info } from 'lucide-react';
 
 export default function Login({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
@@ -172,8 +172,9 @@ export default function Login({ onLoginSuccess }) {
           </button>
         </form>
 
-        <div className="mt-4 p-2.5 rounded-xl bg-[#141517] border border-gray-800 text-[11px] text-gray-400 leading-relaxed text-center">
-          💡 <strong>買家提示</strong>：請使用管理員簽發之帳號與密碼進行登入。如尚未開通或忘記密碼，請聯絡 <span className="text-discord-blurple font-mono">ryanryan311311@gmail.com</span>。
+        <div className="mt-4 p-2.5 rounded-xl bg-[#141517] border border-gray-800 text-[11px] text-gray-400 leading-relaxed text-center flex items-center justify-center space-x-1.5">
+          <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+          <span><strong>買家提示</strong>：請使用管理員簽發之帳號與密碼進行登入。如尚未開通或忘記密碼，請聯絡 <span className="text-discord-blurple font-mono">ryanryan311311@gmail.com</span>。</span>
         </div>
       </div>
 
