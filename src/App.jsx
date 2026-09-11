@@ -21,6 +21,7 @@ import {
   Pause,
   User,
   CheckCircle2,
+  Award,
   LogOut,
   UserCheck,
   Clock,
@@ -388,7 +389,7 @@ export default function App() {
                     : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'
                 }`}
               >
-                <Crown className="w-4 h-4" />
+                <Award className="w-4 h-4" />
                 <span>代理經銷後台</span>
               </button>
             )}
@@ -403,7 +404,7 @@ export default function App() {
                     : 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'
                 }`}
               >
-                <Crown className="w-4 h-4" />
+                <Award className="w-4 h-4" />
                 <span>授權管理中心</span>
               </button>
             )}

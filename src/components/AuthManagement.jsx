@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Crown,
+  Award,
   UserPlus,
   Users,
   Shield,
@@ -31,7 +31,6 @@ import {
   Send,
   Activity,
   Filter,
-  Award,
   User,
   UserCheck,
   Eye,
@@ -468,7 +467,7 @@ export default function AuthManagement({ currentUser, bots = [] }) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
           <div className="flex items-center space-x-3.5">
             <div className="p-3.5 rounded-2xl bg-gradient-to-tr from-amber-500 to-indigo-600 text-white shadow-lg shadow-indigo-500/20">
-              <Crown className="w-7 h-7" />
+              <Award className="w-7 h-7" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
