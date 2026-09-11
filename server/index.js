@@ -16,6 +16,7 @@ import { WebSocketServer } from 'ws';
 import http from 'http';
 import path from 'path';
 import os from 'os';
+import net from 'net';
 import { fileURLToPath } from 'url';
 import { botManager } from './botManager.js';
 import { authManager, SUPER_ADMIN_EMAIL } from './authManager.js';
@@ -285,6 +286,45 @@ app.get('/api/admin/audit-logs', requireAuth, (req, res) => {
     return res.json({ success: true, logs });
   }
   return res.status(403).json({ success: false, message: '權限不足' });
+});
+
+// 診斷端點：檢測雲端外網連線狀況 (測試 SMTP/HTTPS 埠口是否被阻擋)
+app.get('/api/debug/net-test', async (req, res) => {
+  const targets = [
+    { host: 'smtp.gmail.com', port: 465, family: 4 },
+    { host: 'smtp.gmail.com', port: 587, family: 4 },
+    { host: 'smtp.gmail.com', port: 465 },
+    { host: 'www.google.com', port: 443 }
+  ];
+
+  const results = {};
+  for (const t of targets) {
+    const key = `${t.host}:${t.port}${t.family ? ' (IPv' + t.family + ')' : ''}`;
+    try {
+      const outcome = await new Promise((resolve) => {
+        const s = net.createConnection({ host: t.host, port: t.port, family: t.family, timeout: 5000 }, () => {
+          s.destroy();
+          resolve('CONNECTED_SUCCESS');
+        });
+        s.on('timeout', () => {
+          s.destroy();
+          resolve('TIMEOUT (可能被雲端防火牆阻擋)');
+        });
+        s.on('error', (err) => {
+          resolve(`ERROR: ${err.message}`);
+        });
+      });
+      results[key] = outcome;
+    } catch (e) {
+      results[key] = e.message;
+    }
+  }
+
+  res.json({
+    deployTime: new Date().toISOString(),
+    version: '890685f-net-check',
+    results
+  });
 });
 
 // 管理員：測試 Gmail SMTP 發信連線
