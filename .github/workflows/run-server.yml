@@ -1,0 +1,29 @@
+name: Run Node Server on GitHub
+
+on:
+  # 1. 讓你可以在 GitHub 網頁手動點擊按鈕觸發
+  workflow_dispatch:
+  
+  # 2. 定時觸發（範例：每小時的第 0 分鐘執行一次，Cron 語法可自行修改）
+  schedule:
+    - cron: '0 * * * *'
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 檢查程式碼
+      uses: actions/checkout@v4
+
+    - name: 設定 Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+
+    - name: 安裝套件
+      run: npm install
+
+    - name: 執行啟動指令
+      run: node server/index.js
