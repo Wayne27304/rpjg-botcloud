@@ -1,11 +1,10 @@
-const express = require('express');
-const cors = require('cors');
-const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
-const fs = require('fs-extra');
-const path = require('path');
-require('dotenv').config();
-
+import express from 'express';
+import cors from 'cors';
+import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
+import fs from 'fs-extra';
+import path from 'path';
+import 'dotenv/config'; // Automatically loads your .env configuration
 const { authenticateJWT, authorizeRole } = require('./authManager');
 const { getBots, saveBots, startBot, stopBot, restartBot, createBot, updateBot, deleteBot } = require('./botManager');
 const { auditLog, getAuditLogs } = require('./auditLogger');
